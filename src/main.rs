@@ -1,9 +1,8 @@
-use std::fs::File;
-use std::os::fd::AsFd;
+use std::rc::Rc;
 use wayland_client::{
     delegate_noop,
     protocol::{
-        wl_buffer, wl_compositor, wl_keyboard, wl_shm, wl_seat, wl_registry, wl_shm_pool,
+        wl_buffer, wl_compositor, wl_keyboard, wl_seat, wl_registry,
         wl_surface, wl_output, wl_callback, wl_display
     },
     Connection, Dispatch, QueueHandle, WEnum,
@@ -13,10 +12,23 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_v1,
     ext_session_lock_surface_v1,
 };
+use slint::{
+    platform::{
+        femtovg_renderer::FemtoVGRenderer,
+        WindowAdapter,
+    }, PhysicalSize,
+};
+
+use crate::egl::OpenGLContext;
+use crate::window_adapter::MinimalFemtoVGWindow;
+use crate::platform::CthuluSlintPlatform;
+
+mod egl;
+mod window_adapter;
+mod platform;
 
 
-// This struct represents the state of our app. This simple app does not
-// need any state, by this type still supports the `Dispatch` implementations.
+// This struct represents the state of our app
 #[derive(Default)]
 struct AppData {
     running: bool,
@@ -33,6 +45,8 @@ struct AppData {
 
     wl_display: Option<wl_display::WlDisplay>,
     sync_callback: Option<wl_callback::WlCallback>,
+
+    slint_window: Option<Rc<MinimalFemtoVGWindow>>,
 }
 
 impl AppData {
@@ -44,13 +58,11 @@ impl AppData {
 
         let session_lock_surface = session_lock.get_lock_surface(base_surface, output, qh, ());
         self.session_lock_surface = Some(session_lock_surface);
-        
+
         Some(())
     }
 }
 
-// Implement `Dispatch<WlRegistry, ()> for out state. This provides the logic
-// to be able to process events for the wl_registry interface.
 impl Dispatch<wl_registry::WlRegistry, ()> for AppData {
     fn event(
         state: &mut Self,
@@ -80,31 +92,6 @@ impl Dispatch<wl_registry::WlRegistry, ()> for AppData {
 
                     let _ = state.init_session_lock_surface(qh);
                 },
-                "wl_shm" => {
-                    let shm = registry.bind::<wl_shm::WlShm, _, _>(name, 1, qh, ());
-
-                    let (init_w, init_h) = (1920, 1080);
-
-                    let mut file = tempfile::tempfile().unwrap();
-                    draw(&mut file, (init_w, init_h));
-                    let pool = shm.create_pool(file.as_fd(), (init_w * init_h * 4) as i32, qh, ());
-                    let buffer = pool.create_buffer(
-                        0,
-                        init_w as i32,
-                        init_h as i32,
-                        (init_w * 4) as i32,
-                        wl_shm::Format::Argb8888,
-                        qh,
-                        (),
-                    );
-                    state.buffer = Some(buffer.clone());
-
-                    if state.configured {
-                        let surface = state.base_surface.as_ref().unwrap();
-                        surface.attach(Some(&buffer), 0, 0);
-                        surface.commit();
-                    }
-                },
                 "ext_session_lock_manager_v1" => {
                     let session_lock_manager = registry.bind::<ext_session_lock_manager_v1::ExtSessionLockManagerV1, _, _>(name, 1, qh, ());
                     let session_lock = session_lock_manager.lock(qh, ());
@@ -118,31 +105,12 @@ impl Dispatch<wl_registry::WlRegistry, ()> for AppData {
     }
 }
 
-// Ignore events from these object types in this example.
+// Ignore events from these object types
 delegate_noop!(AppData: ignore wl_compositor::WlCompositor);
 delegate_noop!(AppData: ignore wl_surface::WlSurface);
-delegate_noop!(AppData: ignore wl_shm::WlShm);
-delegate_noop!(AppData: ignore wl_shm_pool::WlShmPool);
 delegate_noop!(AppData: ignore wl_buffer::WlBuffer);
 delegate_noop!(AppData: ignore wl_output::WlOutput);
 delegate_noop!(AppData: ignore ext_session_lock_manager_v1::ExtSessionLockManagerV1);
-
-fn draw(tmp: &mut File, (buf_x, buf_y): (u32, u32)) {
-    use std::{cmp::min, io::Write};
-    let mut buf = std::io::BufWriter::new(tmp);
-    for y in 0..buf_y {
-        for x in 0..buf_x {
-            let a = 0xFF;
-            let r = min(((buf_x - x) * 0xFF) / buf_x, ((buf_y - y) * 0xFF) / buf_y);
-            let g = min((x * 0xFF) / buf_x, ((buf_y - y) * 0xFF) / buf_y);
-            let b = min(((buf_x - x) * 0xFF) / buf_x, (y * 0xFF) / buf_y);
-
-            let color = (a << 24) + (r << 16) + (g << 8) + b;
-            buf.write_all(&color.to_ne_bytes()).unwrap();
-        }
-    }
-    buf.flush().unwrap();
-}
 
 impl Dispatch<wl_seat::WlSeat, ()> for AppData {
     fn event(
@@ -163,7 +131,7 @@ impl Dispatch<wl_seat::WlSeat, ()> for AppData {
 
 impl Dispatch<wl_keyboard::WlKeyboard, ()> for AppData {
     fn event(
-        state: &mut Self,
+        app_state: &mut Self,
         _: &wl_keyboard::WlKeyboard,
         event: wl_keyboard::Event,
         _: &(),
@@ -171,11 +139,12 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for AppData {
         qh: &QueueHandle<Self>,
     ) {
         if let wl_keyboard::Event::Key { key, .. } = event {
+            // TODO: Send input to slint
             if key == 1 {
                 // ESC key
-                state.session_lock.as_ref().unwrap().unlock_and_destroy();
-                let sync_callback = state.wl_display.as_ref().unwrap().sync(qh, ());
-                state.sync_callback = Some(sync_callback);
+                app_state.session_lock.as_ref().unwrap().unlock_and_destroy();
+                let sync_callback = app_state.wl_display.as_ref().unwrap().sync(qh, ());
+                app_state.sync_callback = Some(sync_callback);
             }
         }
     }
@@ -238,6 +207,7 @@ impl Dispatch<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ()> for AppD
     ) {
         match event {
             ext_session_lock_surface_v1::Event::Configure { serial, width, height } => {
+                println!("surface reconfigure");
                 state.width = width;
                 state.height = height;
                 surface.ack_configure(serial);
@@ -253,10 +223,19 @@ impl Dispatch<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ()> for AppD
     }
 }
 
+slint::slint!{
+    export component HelloWorld {
+        Text {
+            text: "hello world";
+            color: black;
+        }
+    }
+}
 
-
-// The main function of our program
+// TODO: Logging
+// TODO: Multithreading with Channels
 fn main() {
+    
     let conn = Connection::connect_to_env().unwrap();
 
     let display = conn.display();
@@ -272,7 +251,35 @@ fn main() {
         .. Default::default()
     };
     
+    let mut slint_setup_done = false;
+    
+
     while state.running {
-        event_queue.blocking_dispatch(&mut state).unwrap();
+        if let Some(guard) = event_queue.prepare_read() {
+            guard.read().ok();
+        }
+        event_queue.dispatch_pending(&mut state).unwrap();
+        event_queue.flush().unwrap();
+        if !slint_setup_done && state.configured {
+            // TODO: set initial opengl suface size correctly
+
+            let base_surface = state.base_surface.as_ref().unwrap();
+            let wl_display = state.wl_display.as_ref().unwrap();
+            let gl_context = OpenGLContext::new(wl_display, base_surface, (state.width, state.height));
+            let renderer = FemtoVGRenderer::new(gl_context).unwrap();
+            let slint_window = MinimalFemtoVGWindow::new(renderer);
+            slint_window.set_size(slint::WindowSize::Physical(PhysicalSize::new(state.width, state.height)));
+
+            let platform = CthuluSlintPlatform::new(slint_window.clone());
+
+            state.slint_window = Some(slint_window);
+            slint::platform::set_platform(Box::new(platform)).unwrap();
+            let _ui = HelloWorld::new().expect("Failed to load UI").show();
+            slint_setup_done = true;
+        }
+        if slint_setup_done {
+            slint::platform::update_timers_and_animations();
+            state.slint_window.as_ref().unwrap().draw_if_needed();
+        }
     }
 }
