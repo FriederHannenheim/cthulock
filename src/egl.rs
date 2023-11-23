@@ -7,6 +7,7 @@ use std::{
     error::Error,
 };
 use wayland_client::{
+    backend::ObjectId,
     protocol::{
         wl_display,
         wl_surface
@@ -22,7 +23,10 @@ use raw_window_handle::{
 use glutin::{
     api::egl::{
         display::Display,
-        context::PossiblyCurrentContext,
+        context::{
+            PossiblyCurrentContext,
+            NotCurrentContext,
+        },
         surface::Surface,
     },
     surface::{
@@ -42,10 +46,9 @@ pub struct OpenGLContext {
 }
 
 impl OpenGLContext {
-    // TODO: Improve and break up function
-    pub fn new(wl_display: &wl_display::WlDisplay, wl_surface: &wl_surface::WlSurface, size: (u32, u32)) -> Self {
+    pub fn new(display_id: ObjectId, surface_id: ObjectId, size: (u32, u32)) -> Self {
         let mut handle = WaylandDisplayHandle::empty();
-        handle.display = wl_display.id().as_ptr() as *mut _;
+        handle.display = display_id.as_ptr() as *mut _;
         let display_handle = RawDisplayHandle::Wayland(handle);
     
         let config_template = ConfigTemplateBuilder::new()
@@ -73,7 +76,7 @@ impl OpenGLContext {
         };
     
         let mut handle = WaylandWindowHandle::empty();
-        handle.surface = wl_surface.id().as_ptr() as *mut _;
+        handle.surface = surface_id.as_ptr() as *mut _;
         let surface_handle = RawWindowHandle::Wayland(handle);
     
         let (width, height) = size;
@@ -87,7 +90,7 @@ impl OpenGLContext {
         let surface = unsafe {
             glutin_display.create_window_surface(&config, &attrs).expect("Failed to create OpenGl surface")
         };
-    
+
         let context = not_current.make_current(&surface).expect("Failed to make newly created OpenGL context current");
 
         Self {

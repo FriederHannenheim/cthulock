@@ -1,5 +1,10 @@
-use std::rc::Rc;
+use std::{
+    sync::mpsc::{self, Sender},
+    rc::Rc,
+    thread
+};
 use wayland_client::{
+    Proxy,
     delegate_noop,
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_seat, wl_registry,
@@ -19,13 +24,17 @@ use slint::{
     }, PhysicalSize,
 };
 
+use crate::render_thread::render_thread;
 use crate::egl::OpenGLContext;
 use crate::window_adapter::MinimalFemtoVGWindow;
 use crate::platform::CthuluSlintPlatform;
+use crate::message::CthulockMessage;
 
+mod render_thread;
 mod egl;
 mod window_adapter;
 mod platform;
+mod message;
 
 
 // This struct represents the state of our app
@@ -39,7 +48,6 @@ struct AppData {
     height: u32,
     // TODO: Support multiple outputs
     output: Option<wl_output::WlOutput>,
-    buffer: Option<wl_buffer::WlBuffer>,
     session_lock: Option<ext_session_lock_v1::ExtSessionLockV1>,
     session_lock_surface: Option<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1>,
 
@@ -47,6 +55,7 @@ struct AppData {
     sync_callback: Option<wl_callback::WlCallback>,
 
     slint_window: Option<Rc<MinimalFemtoVGWindow>>,
+    render_thread_sender: Option<Sender<CthulockMessage>>,
 }
 
 impl AppData {
@@ -212,28 +221,24 @@ impl Dispatch<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ()> for AppD
                 state.height = height;
                 surface.ack_configure(serial);
                 state.configured = true;
-                let surface = state.base_surface.as_ref().unwrap();
-                if let Some(ref buffer) = state.buffer {
-                    surface.attach(Some(buffer), 0, 0);
-                    surface.commit();
-                }
+
+                let sender = state.render_thread_sender.as_ref().unwrap();
+                let base_surface = state.base_surface.as_ref().unwrap();
+                let wl_display = state.wl_display.as_ref().unwrap();
+
+                let message = CthulockMessage::SurfaceReady {
+                    display_id: wl_display.id(), surface_id: base_surface.id(), size: (width, height)
+                };
+
+                sender.send(message).unwrap();
             }
             _ => {}
         }
     }
 }
 
-slint::slint!{
-    export component HelloWorld {
-        Text {
-            text: "hello world";
-            color: black;
-        }
-    }
-}
-
 // TODO: Logging
-// TODO: Multithreading with Channels
+// TODO: Early init of surface to get image on screen sooner
 fn main() {
     
     let conn = Connection::connect_to_env().unwrap();
@@ -245,41 +250,19 @@ fn main() {
 
     let _registry = display.get_registry(&qh, ());
 
+    let (sender, receiver) = mpsc::channel::<CthulockMessage>();
     let mut state = AppData {
         running: true,
         wl_display: Some(display),
+        render_thread_sender: Some(sender),
         .. Default::default()
     };
-    
-    let mut slint_setup_done = false;
-    
+
+    thread::spawn(move || {
+        render_thread(receiver);
+    });
 
     while state.running {
-        if let Some(guard) = event_queue.prepare_read() {
-            guard.read().ok();
-        }
-        event_queue.dispatch_pending(&mut state).unwrap();
-        event_queue.flush().unwrap();
-        if !slint_setup_done && state.configured {
-            // TODO: set initial opengl suface size correctly
-
-            let base_surface = state.base_surface.as_ref().unwrap();
-            let wl_display = state.wl_display.as_ref().unwrap();
-            let gl_context = OpenGLContext::new(wl_display, base_surface, (state.width, state.height));
-            let renderer = FemtoVGRenderer::new(gl_context).unwrap();
-            let slint_window = MinimalFemtoVGWindow::new(renderer);
-            slint_window.set_size(slint::WindowSize::Physical(PhysicalSize::new(state.width, state.height)));
-
-            let platform = CthuluSlintPlatform::new(slint_window.clone());
-
-            state.slint_window = Some(slint_window);
-            slint::platform::set_platform(Box::new(platform)).unwrap();
-            let _ui = HelloWorld::new().expect("Failed to load UI").show();
-            slint_setup_done = true;
-        }
-        if slint_setup_done {
-            slint::platform::update_timers_and_animations();
-            state.slint_window.as_ref().unwrap().draw_if_needed();
-        }
+        event_queue.blocking_dispatch(&mut state).unwrap();
     }
 }
