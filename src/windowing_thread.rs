@@ -5,9 +5,9 @@ use wayland_client::{
         wl_surface, wl_output, wl_callback, wl_display, wl_pointer,
     },
     globals::{
-        registry_queue_init, Global, GlobalListContents,
+        registry_queue_init, GlobalListContents,
     },
-    Proxy, Connection, Dispatch, QueueHandle, WEnum,
+    Proxy, Connection, Dispatch, QueueHandle,
     delegate_noop,
 };
 use wayland_protocols::ext::session_lock::v1::client::{
@@ -16,27 +16,15 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_surface_v1,
 };
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_keyboard, delegate_output, delegate_pointer, delegate_registry,
-    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window,
-    output::{OutputHandler, OutputState},
-    registry::{ProvidesRegistryState, RegistryState},
-    registry_handlers,
+    delegate_keyboard, delegate_pointer,
+    delegate_seat, delegate_registry, registry_handlers,
+    registry::{
+        RegistryState, ProvidesRegistryState,
+    },
     seat::{
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers},
         pointer::{PointerEvent, PointerEventKind, PointerHandler},
         Capability, SeatHandler, SeatState,
-    },
-    shell::{
-        xdg::{
-            window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
-            XdgShell,
-        },
-        WaylandSurface,
-    },
-    shm::{
-        slot::{Buffer, SlotPool},
-        Shm, ShmHandler,
     },
 };
 use crate::message::CthulockMessage;
@@ -50,14 +38,26 @@ pub fn windowing_thread(sender: Sender<CthulockMessage>) {
     let mut event_queue = conn.new_event_queue();
     let qh = event_queue.handle();
 
-    let (globals, queue) = registry_queue_init::<AppData>(&conn).unwrap();
+    let (globals, _queue) = registry_queue_init::<AppData>(&conn).unwrap();
+
+    let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=5, ()).unwrap();
+    let wl_surface = compositor.create_surface(&qh, ());
+    let output: wl_output::WlOutput = globals.bind(&qh, 1..=1, ()).unwrap();
+    let session_lock_manager: ext_session_lock_manager_v1::ExtSessionLockManagerV1 = globals.bind(&qh, 1..=1, ()).expect("ext_session_lock_v1 not available");
+    let session_lock = session_lock_manager.lock(&qh, ());
+    let session_lock_surface = session_lock.get_lock_surface(&wl_surface, &output, &qh, ());
 
     let mut state = AppData::new(
+        RegistryState::new(&globals),
         display,
-        sender,
+        wl_surface,
+        output,
+        session_lock,
+        session_lock_surface,
         SeatState::new(&globals, &qh),
+        sender,
     );
-
+    
     while state.running {
         event_queue.blocking_dispatch(&mut state).unwrap();
     }
@@ -68,16 +68,20 @@ struct AppData {
     running: bool,
     locked: bool,
     configured: bool,
-    base_surface: Option<wl_surface::WlSurface>,
+
     width: u32,
     height: u32,
+
+    registry_state: RegistryState,
+    wl_surface: wl_surface::WlSurface,
+    wl_display: wl_display::WlDisplay,
     // TODO: Support multiple outputs
-    output: Option<wl_output::WlOutput>,
-    session_lock: Option<ext_session_lock_v1::ExtSessionLockV1>,
+    output: wl_output::WlOutput,
+    session_lock: ext_session_lock_v1::ExtSessionLockV1,
     session_lock_surface: Option<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1>,
 
-    wl_display: wl_display::WlDisplay,
     sync_callback: Option<wl_callback::WlCallback>,
+
     seat_state: SeatState,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
@@ -86,16 +90,26 @@ struct AppData {
 }
 
 impl AppData {
-    fn new(display: wl_display::WlDisplay, sender: Sender<CthulockMessage>, seat_state: SeatState) -> Self {
+    fn new(
+        registry_state: RegistryState,
+        display: wl_display::WlDisplay,
+        surface: wl_surface::WlSurface,
+        output: wl_output::WlOutput,
+        session_lock: ext_session_lock_v1::ExtSessionLockV1,
+        session_lock_surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1,
+        seat_state: SeatState,
+        sender: Sender<CthulockMessage>,
+    ) -> Self {
         Self {
             running: true,
             locked: false,
             configured: false,
-            base_surface: None,
+            registry_state,
+            wl_surface: surface,
             width: 0,
             height: 0,
-            output: None,
-            session_lock: None,
+            output: output,
+            session_lock: session_lock,
             session_lock_surface: None,
             wl_display: display,
             sync_callback: None,
@@ -103,57 +117,6 @@ impl AppData {
             keyboard: None,
             pointer: None,
             render_thread_sender: sender,
-        }
-    }
-
-    fn init_session_lock_surface(&mut self, qh: &QueueHandle<Self>) -> Option<()> {
-        let session_lock = self.session_lock.as_ref()?;
-        let base_surface = self.base_surface.as_ref()?;
-
-        let output = self.output.as_ref()?;
-
-        let session_lock_surface = session_lock.get_lock_surface(base_surface, output, qh, ());
-        self.session_lock_surface = Some(session_lock_surface);
-
-        Some(())
-    }
-}
-
-impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for AppData {
-    fn event(
-        state: &mut Self,
-        registry: &wl_registry::WlRegistry,
-        event: wl_registry::Event,
-        _: &GlobalListContents,
-        _: &Connection,
-        qh: &QueueHandle<AppData>,
-    ) {
-        if let wl_registry::Event::Global { name, interface, .. } = event {
-            println!("got global {}", interface);
-            match &interface[..] {
-                "wl_compositor" => {
-                    let compositor = registry.bind::<wl_compositor::WlCompositor, _, _>(name, 1, qh, ());
-                    let surface = compositor.create_surface(qh, ());
-
-                    state.base_surface = Some(surface);
-
-                    let _ = state.init_session_lock_surface(qh);
-                },
-                "wl_output" => {
-                    let output = registry.bind::<wl_output::WlOutput, _, _>(name, 1, qh, ());
-                    state.output = Some(output);
-
-                    let _ = state.init_session_lock_surface(qh);
-                },
-                "ext_session_lock_manager_v1" => {
-                    let session_lock_manager = registry.bind::<ext_session_lock_manager_v1::ExtSessionLockManagerV1, _, _>(name, 1, qh, ());
-                    let session_lock = session_lock_manager.lock(qh, ());
-                    state.session_lock = Some(session_lock);
-
-                    let _ = state.init_session_lock_surface(qh);
-                },
-                _ => {}
-            }
         }
     }
 }
@@ -168,6 +131,15 @@ delegate_noop!(AppData: ignore ext_session_lock_manager_v1::ExtSessionLockManage
 delegate_seat!(AppData);
 delegate_keyboard!(AppData);
 delegate_pointer!(AppData);
+delegate_registry!(AppData);
+
+
+impl ProvidesRegistryState for AppData {
+    fn registry(&mut self) -> &mut RegistryState {
+        &mut self.registry_state
+    }
+    registry_handlers![SeatState,];
+}
 
 impl Dispatch<wl_callback::WlCallback, ()> for AppData {
     fn event(
@@ -232,10 +204,8 @@ impl Dispatch<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ()> for AppD
                 surface.ack_configure(serial);
                 state.configured = true;
 
-                let base_surface = state.base_surface.as_ref().unwrap();
-
                 let message = CthulockMessage::SurfaceReady {
-                    display_id: state.wl_display.id(), surface_id: base_surface.id(), size: (width, height)
+                    display_id: state.wl_display.id(), surface_id: state.wl_surface.id(), size: (width, height)
                 };
 
                 state.render_thread_sender.send(message).unwrap();
@@ -311,7 +281,7 @@ impl KeyboardHandler for AppData {
         _: &wl_surface::WlSurface,
         _: u32,
         _: &[u32],
-        keysyms: &[Keysym],
+        _keysyms: &[Keysym],
     ) {}
 
     fn leave(

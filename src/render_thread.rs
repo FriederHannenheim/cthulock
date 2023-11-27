@@ -37,10 +37,10 @@ pub fn render_thread(receiver: Receiver<CthulockMessage>) {
     slint::platform::set_platform(Box::new(platform)).unwrap();
     let _ui = HelloWorld::new().expect("Failed to load UI").show();
 
-    let mut running = true;
+    let running = true;
     while running {
         // handle messages
-        while let Ok(message) = receiver.try_recv() {
+        while let Ok(_message) = receiver.try_recv() {
             
         }
 
