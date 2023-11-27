@@ -1,11 +1,11 @@
 use std::sync::mpsc::Sender;
 use wayland_client::{
     protocol::{
-        wl_buffer, wl_compositor, wl_keyboard, wl_seat, wl_registry,
+        wl_buffer, wl_compositor, wl_keyboard, wl_seat,
         wl_surface, wl_output, wl_callback, wl_display, wl_pointer,
     },
     globals::{
-        registry_queue_init, GlobalListContents,
+        registry_queue_init,
     },
     Proxy, Connection, Dispatch, QueueHandle,
     delegate_noop,
@@ -45,15 +45,13 @@ pub fn windowing_thread(sender: Sender<CthulockMessage>) {
     let output: wl_output::WlOutput = globals.bind(&qh, 1..=1, ()).unwrap();
     let session_lock_manager: ext_session_lock_manager_v1::ExtSessionLockManagerV1 = globals.bind(&qh, 1..=1, ()).expect("ext_session_lock_v1 not available");
     let session_lock = session_lock_manager.lock(&qh, ());
-    let session_lock_surface = session_lock.get_lock_surface(&wl_surface, &output, &qh, ());
+    let _session_lock_surface = session_lock.get_lock_surface(&wl_surface, &output, &qh, ());
 
     let mut state = AppData::new(
         RegistryState::new(&globals),
         display,
         wl_surface,
-        output,
         session_lock,
-        session_lock_surface,
         SeatState::new(&globals, &qh),
         sender,
     );
@@ -76,9 +74,7 @@ struct AppData {
     wl_surface: wl_surface::WlSurface,
     wl_display: wl_display::WlDisplay,
     // TODO: Support multiple outputs
-    output: wl_output::WlOutput,
     session_lock: ext_session_lock_v1::ExtSessionLockV1,
-    session_lock_surface: Option<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1>,
 
     sync_callback: Option<wl_callback::WlCallback>,
 
@@ -94,9 +90,7 @@ impl AppData {
         registry_state: RegistryState,
         display: wl_display::WlDisplay,
         surface: wl_surface::WlSurface,
-        output: wl_output::WlOutput,
         session_lock: ext_session_lock_v1::ExtSessionLockV1,
-        session_lock_surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1,
         seat_state: SeatState,
         sender: Sender<CthulockMessage>,
     ) -> Self {
@@ -108,9 +102,7 @@ impl AppData {
             wl_surface: surface,
             width: 0,
             height: 0,
-            output: output,
             session_lock: session_lock,
-            session_lock_surface: None,
             wl_display: display,
             sync_callback: None,
             seat_state,
@@ -302,6 +294,7 @@ impl KeyboardHandler for AppData {
         event: KeyEvent,
     ) {
         println!("Key press: {event:?}");
+
     }
 
     fn release_key(
@@ -313,6 +306,9 @@ impl KeyboardHandler for AppData {
         event: KeyEvent,
     ) {
         println!("Key release: {event:?}");
+        if event.keysym == Keysym::Escape {
+            
+        }
     }
 
     fn update_modifiers(
