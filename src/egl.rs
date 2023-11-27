@@ -6,14 +6,7 @@ use std::{
     },
     error::Error,
 };
-use wayland_client::{
-    backend::ObjectId,
-    protocol::{
-        wl_display,
-        wl_surface
-    },
-    Proxy,
-};
+use wayland_client::backend::ObjectId;
 use raw_window_handle::{
     WaylandDisplayHandle,
     RawDisplayHandle,
@@ -23,10 +16,7 @@ use raw_window_handle::{
 use glutin::{
     api::egl::{
         display::Display,
-        context::{
-            PossiblyCurrentContext,
-            NotCurrentContext,
-        },
+        context::PossiblyCurrentContext,
         surface::Surface,
     },
     surface::{

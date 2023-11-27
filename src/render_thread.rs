@@ -1,4 +1,4 @@
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::Receiver;
 
 use slint::{
     platform::femtovg_renderer::FemtoVGRenderer,
@@ -12,10 +12,11 @@ use crate::{
 };
 
 slint::slint!{
+    import { Button } from "std-widgets.slint";
     export component HelloWorld {
-        Text {
+        Button {
             text: "hello world";
-            color: black;
+            clicked => { self.text = "yekyekyek"; }
         }
     }
 }

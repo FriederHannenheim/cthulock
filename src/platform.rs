@@ -12,7 +12,7 @@ use slint::{
         WindowAdapter,
     },
 };
-use crate::MinimalFemtoVGWindow;
+use crate::window_adapter::MinimalFemtoVGWindow;
 
 
 pub struct CthuluSlintPlatform {
