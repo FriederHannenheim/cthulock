@@ -92,7 +92,7 @@ impl OpenGLContext {
 
 unsafe impl OpenGLInterface for OpenGLContext {
     fn ensure_current(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        println!("ensuring context is current");
+        log::debug!("ensuring context is current");
         if !self.context.is_current() {
             self.context.make_current(&self.surface)?;
         }
@@ -100,13 +100,14 @@ unsafe impl OpenGLInterface for OpenGLContext {
     }
 
     fn swap_buffers(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        println!("swapping buffers");
+        log::debug!("swapping buffers");
         self.surface.swap_buffers(&self.context)?;
         Ok(())
     }
 
     fn resize(&self, width: NonZeroU32, height: NonZeroU32) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.ensure_current()?;
+        log::debug!("resizing surface to {width},{height}");
         self.surface.resize(&self.context, width, height);
 
         Ok(())

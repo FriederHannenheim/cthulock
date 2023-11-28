@@ -1,29 +1,44 @@
-use std::sync::mpsc::Receiver;
-
+use std::sync::mpsc::{
+    Sender,
+    Receiver,
+};
 use slint::{
-    platform::femtovg_renderer::FemtoVGRenderer,
+    platform::{
+        femtovg_renderer::FemtoVGRenderer,
+        WindowEvent,
+    },
     PhysicalSize,
+    LogicalSize,
 };
 use crate::{
     window_adapter::MinimalFemtoVGWindow,
     platform::CthuluSlintPlatform,
-    message::CthulockMessage,
+    message::{
+        WindowingMessage,
+        RenderMessage,
+    },
     egl::OpenGLContext,
 };
 
 slint::slint!{
-    import { Button } from "std-widgets.slint";
+    // import { Image } from "std-widgets.slint";
     export component HelloWorld {
-        Button {
-            text: "hello world";
-            clicked => { self.text = "yekyekyek"; }
+        in property<string> clock_text;
+        Image {
+            // image-fit: fill;
+            width: parent.width;
+            height: parent.height;
+            source: @image-url("/home/fried/.config/wallpaper.png");
+            Text {
+                text: clock_text;
+            }
         }
     }
 }
 
-pub fn render_thread(receiver: Receiver<CthulockMessage>) {
+pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<WindowingMessage>) {
     let (display_id, surface_id, size) = match receiver.recv().unwrap() {
-        CthulockMessage::SurfaceReady{ display_id, surface_id, size} => (display_id, surface_id, size),
+        WindowingMessage::SurfaceReady{ display_id, surface_id, size} => (display_id, surface_id, size),
         message => panic!("First message sent to render thread is not ContextCreated. Is {:?}", message),
     };
 
@@ -35,17 +50,40 @@ pub fn render_thread(receiver: Receiver<CthulockMessage>) {
     let platform = CthuluSlintPlatform::new(slint_window.clone());
 
     slint::platform::set_platform(Box::new(platform)).unwrap();
-    let _ui = HelloWorld::new().expect("Failed to load UI").show();
+    let ui = HelloWorld::new().expect("Failed to load UI");
+    ui.set_clock_text("jeek".into());
+    ui.show().unwrap();
 
     let running = true;
+    let mut last_serial = -1;
+    let mut last_acked_serial = -1;
     while running {
         // handle messages
-        while let Ok(_message) = receiver.try_recv() {
-            
+        while let Ok(message) = receiver.try_recv() {
+            match message {
+                WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
+                WindowingMessage::SurfaceResize { size, serial } => {
+                    slint_window.dispatch_event(
+                        WindowEvent::Resized { 
+                            size: LogicalSize::new(size.0 as f32, size.1 as f32)
+                        }
+                    );
+                    sender.send(
+                        RenderMessage::AckResize { serial }
+                    ).unwrap();
+                    last_serial = serial as i64;
+                },
+                WindowingMessage::SurfaceResizeAcked { serial } => {
+                    last_acked_serial = serial as i64;
+                },
+                WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
+            }
         }
-
+        
         slint::platform::update_timers_and_animations();
-        slint_window.draw_if_needed();
+        if last_serial == last_acked_serial {
+            slint_window.draw_if_needed();
+        }
     }
 
 }

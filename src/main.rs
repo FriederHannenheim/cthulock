@@ -2,10 +2,15 @@ use std::{
     sync::mpsc,
     thread
 };
+use env_logger::Env;
+
 use crate::{
     render_thread::render_thread,
     windowing_thread::windowing_thread,
-    message::CthulockMessage,
+    message::{
+        RenderMessage,
+        WindowingMessage,
+    },
 };
 
 mod render_thread;
@@ -15,16 +20,24 @@ mod platform;
 mod message;
 mod windowing_thread;
 
-
-// TODO: Logging
-// TODO: Early init of surface to get image on screen sooner
+// TODO: Solve resize race condition
 fn main() {
-    let (sender, receiver) = mpsc::channel::<CthulockMessage>();
+
+    #[cfg(debug_assertions)]
+    env_logger::Builder::from_env(
+        Env::default().default_filter_or("debug")
+    ).init();
+
+    #[cfg(not(debug_assertions))]
+    env_logger::init();
+
+    let (sender_to_render, receiver_from_windowing) = mpsc::channel::<WindowingMessage>();
+    let (sender_to_windowing, receiver_from_render) = mpsc::channel::<RenderMessage>();
     thread::spawn(move || {
-        render_thread(receiver);
+        render_thread(sender_to_windowing, receiver_from_windowing);
     });
 
     thread::spawn(move || {
-        windowing_thread(sender);
+        windowing_thread(sender_to_render, receiver_from_render);
     }).join().unwrap();
 }

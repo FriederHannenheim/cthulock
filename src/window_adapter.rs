@@ -32,7 +32,8 @@ impl MinimalFemtoVGWindow {
 
     pub fn draw_if_needed(&self) {
         if self.needs_redraw.get() {
-            println!("drawing");
+            log::debug!("drawing new frame");
+
             self.renderer.render().unwrap();
             self.needs_redraw.set(false);
         }

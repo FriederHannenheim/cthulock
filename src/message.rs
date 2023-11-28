@@ -1,10 +1,26 @@
 use wayland_client::backend::ObjectId;
+use slint::platform::WindowEvent;
 
 #[derive(Debug)]
-pub enum CthulockMessage {
+pub enum WindowingMessage {
     SurfaceReady {
         display_id: ObjectId,
         surface_id: ObjectId,
         size: (u32, u32)
-    }
+    },
+    SurfaceResize {
+        size: (u32, u32),
+        serial: u32
+    },
+    SurfaceResizeAcked {
+        serial: u32
+    },
+    SlintWindowEvent(WindowEvent),
+}
+
+#[derive(Debug)]
+pub enum RenderMessage {
+    AckResize {
+        serial: u32
+    },
 }

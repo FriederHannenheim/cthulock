@@ -519,6 +519,7 @@ dependencies = [
  "env_logger",
  "glutin",
  "khronos-egl",
+ "log",
  "raw-window-handle 0.5.2",
  "slint",
  "smithay-client-toolkit",
