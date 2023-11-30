@@ -1,29 +1,21 @@
-use std::{
-    sync::mpsc,
-    thread
-};
+use std::{sync::mpsc, thread};
 
 use crate::{
+    message::{RenderMessage, WindowingMessage},
     render_thread::render_thread,
     windowing_thread::windowing_thread,
-    message::{
-        RenderMessage,
-        WindowingMessage,
-    },
 };
 
-mod render_thread;
 mod egl;
-mod window_adapter;
-mod platform;
 mod message;
+mod platform;
+mod render_thread;
+mod window_adapter;
 mod windowing_thread;
 
 fn main() {
     #[cfg(debug_assertions)]
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("debug")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
 
     #[cfg(not(debug_assertions))]
     env_logger::init();

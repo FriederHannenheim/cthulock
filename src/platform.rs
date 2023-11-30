@@ -1,19 +1,12 @@
-use std::{
-    time::{
-        Instant,
-        Duration,
-    },
-    rc::Rc,
-};
-use slint::{
-    PlatformError,
-    platform::{
-        Platform,
-        WindowAdapter,
-    },
-};
 use crate::window_adapter::MinimalFemtoVGWindow;
-
+use slint::{
+    platform::{Platform, WindowAdapter},
+    PlatformError,
+};
+use std::{
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 pub struct CthuluSlintPlatform {
     window: Rc<MinimalFemtoVGWindow>,
@@ -28,7 +21,6 @@ impl CthuluSlintPlatform {
             start_time: Instant::now(),
         }
     }
-
 }
 
 impl Platform for CthuluSlintPlatform {

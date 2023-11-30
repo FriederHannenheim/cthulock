@@ -1,43 +1,31 @@
-use std::{sync::mpsc::{Sender, Receiver}, collections::btree_map::Keys};
-use pam_client::{
-    Context, Flag,
-    conv_mock::Conversation,
-};
-use wayland_client::{
-    protocol::{
-        wl_buffer, wl_compositor, wl_keyboard, wl_seat,
-        wl_surface, wl_output, wl_callback, wl_display, wl_pointer,
-    },
-    Proxy, Connection, Dispatch, QueueHandle,
-    delegate_noop, globals::registry_queue_init,
-};
-use wayland_protocols::ext::session_lock::v1::client::{
-    ext_session_lock_manager_v1,
-    ext_session_lock_v1,
-    ext_session_lock_surface_v1,
+use crate::message::{RenderMessage, WindowingMessage};
+use pam_client::{conv_mock::Conversation, Context, Flag};
+use slint::{
+    platform::{Key, PointerEventButton, WindowEvent},
+    LogicalPosition, SharedString,
 };
 use smithay_client_toolkit::{
-    delegate_keyboard, delegate_pointer,
-    delegate_seat, delegate_registry, registry_handlers,
-    registry::{
-        RegistryState, ProvidesRegistryState,
-    },
+    delegate_keyboard, delegate_pointer, delegate_registry, delegate_seat,
+    registry::{ProvidesRegistryState, RegistryState},
+    registry_handlers,
     seat::{
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers},
         pointer::{PointerEvent, PointerEventKind, PointerHandler},
         Capability, SeatHandler, SeatState,
     },
 };
-use slint::{
-    platform::{
-        WindowEvent,
-        PointerEventButton, Key,
+use std::sync::mpsc::{Receiver, Sender};
+use wayland_client::{
+    delegate_noop,
+    globals::registry_queue_init,
+    protocol::{
+        wl_buffer, wl_compositor, wl_display, wl_keyboard, wl_output, wl_pointer, wl_seat,
+        wl_surface,
     },
-    LogicalPosition, SharedString,
+    Connection, Dispatch, Proxy, QueueHandle,
 };
-use crate::message::{
-    RenderMessage,
-    WindowingMessage,
+use wayland_protocols::ext::session_lock::v1::client::{
+    ext_session_lock_manager_v1, ext_session_lock_surface_v1, ext_session_lock_v1,
 };
 
 // TODO: Rename windowing to window in windowing_thread and WindowingMessage
@@ -67,38 +55,40 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<Ren
         SeatState::new(&globals, &qh),
         sender,
     );
-    
+
     while state.running {
         event_queue.blocking_dispatch(&mut state).unwrap();
-        
+
         while let Ok(message) = receiver.try_recv() {
             match message {
                 RenderMessage::AckResize { serial } => {
                     log::debug!("ack configure serial: {serial}");
                     state.session_lock_surface.ack_configure(serial);
-                    state.render_thread_sender.send(
-                        WindowingMessage::SurfaceResizeAcked { serial }
-                    ).unwrap();
+                    state
+                        .render_thread_sender
+                        .send(WindowingMessage::SurfaceResizeAcked { serial })
+                        .unwrap();
                 }
                 RenderMessage::UnlockWithPassword { password } => {
                     let mut context = Context::new(
                         "cthulock",
                         None,
-                        Conversation::with_credentials(
-                            whoami::username(), 
-                            password
-                        )
-                    ).expect("Failed to initialize PAM context");
+                        Conversation::with_credentials(whoami::username(), password),
+                    )
+                    .expect("Failed to initialize PAM context");
 
-                    if  context.authenticate(Flag::NONE).is_ok() && 
-                        context.acct_mgmt(Flag::NONE).is_ok() 
+                    if context.authenticate(Flag::NONE).is_ok()
+                        && context.acct_mgmt(Flag::NONE).is_ok()
                     {
                         log::info!("authentication successfull, quitting...");
                         state.session_lock.unlock_and_destroy();
                         event_queue.roundtrip(&mut state).unwrap();
                         state.running = false;
                     } else {
-                        state.render_thread_sender.send(WindowingMessage::UnlockFailed).unwrap();
+                        state
+                            .render_thread_sender
+                            .send(WindowingMessage::UnlockFailed)
+                            .unwrap();
                     }
                 }
             }
@@ -170,7 +160,6 @@ delegate_keyboard!(AppData);
 delegate_pointer!(AppData);
 delegate_registry!(AppData);
 
-
 impl ProvidesRegistryState for AppData {
     fn registry(&mut self) -> &mut RegistryState {
         &mut self.registry_state
@@ -209,7 +198,11 @@ impl Dispatch<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ()> for AppD
         _: &QueueHandle<Self>,
     ) {
         match event {
-            ext_session_lock_surface_v1::Event::Configure { serial, width, height } => {
+            ext_session_lock_surface_v1::Event::Configure {
+                serial,
+                width,
+                height,
+            } => {
                 log::debug!("surface reconfigure serial: {serial}");
 
                 state.width = width;
@@ -217,34 +210,36 @@ impl Dispatch<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ()> for AppD
 
                 let sender = &state.render_thread_sender;
                 if !state.configured {
-                    sender.send(WindowingMessage::SurfaceReady {
-                        display_id: state.wl_display.id(),
-                        surface_id: state.wl_surface.id(),
-                        size: (width, height)
-                    }).unwrap();
+                    sender
+                        .send(WindowingMessage::SurfaceReady {
+                            display_id: state.wl_display.id(),
+                            surface_id: state.wl_surface.id(),
+                            size: (width, height),
+                        })
+                        .unwrap();
                     state.configured = true;
                     surface.ack_configure(serial);
                 } else {
-                    sender.send(WindowingMessage::SurfaceResize {
-                        size: (width, height),
-                        serial
-                    }).unwrap()
+                    sender
+                        .send(WindowingMessage::SurfaceResize {
+                            size: (width, height),
+                            serial,
+                        })
+                        .unwrap()
                 }
-
             }
             _ => {}
         }
     }
 }
 
-
 impl SeatHandler for AppData {
     fn seat_state(&mut self) -> &mut SeatState {
         &mut self.seat_state
     }
-    
+
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
-    
+
     fn new_capability(
         &mut self,
         _conn: &Connection,
@@ -257,22 +252,19 @@ impl SeatHandler for AppData {
 
             let keyboard = self
                 .seat_state
-                .get_keyboard(
-                    qh,
-                    &seat,
-                    None
-                )
+                .get_keyboard(qh, &seat, None)
                 .expect("Failed to create keyboard");
 
             self.keyboard = Some(keyboard);
         }
-        
+
         if capability == Capability::Pointer && self.pointer.is_none() {
             log::debug!("got pointer capability");
 
             let pointer = self
                 .seat_state
-                .get_pointer(qh, &seat).expect("Failed to create pointer");
+                .get_pointer(qh, &seat)
+                .expect("Failed to create pointer");
             self.pointer = Some(pointer);
         }
     }
@@ -308,7 +300,8 @@ impl KeyboardHandler for AppData {
         _: u32,
         _: &[u32],
         _keysyms: &[Keysym],
-    ) {}
+    ) {
+    }
 
     fn leave(
         &mut self,
@@ -317,7 +310,8 @@ impl KeyboardHandler for AppData {
         _: &wl_keyboard::WlKeyboard,
         _: &wl_surface::WlSurface,
         _: u32,
-    ) {}
+    ) {
+    }
 
     fn press_key(
         &mut self,
@@ -328,13 +322,11 @@ impl KeyboardHandler for AppData {
         event: KeyEvent,
     ) {
         if let Some(text) = sctk_key_event_to_slint(event) {
-            self.render_thread_sender.send(
-                WindowingMessage::SlintWindowEvent(
-                    WindowEvent::KeyPressed {
-                        text
-                    }
-                )
-            ).unwrap();
+            self.render_thread_sender
+                .send(WindowingMessage::SlintWindowEvent(
+                    WindowEvent::KeyPressed { text },
+                ))
+                .unwrap();
         }
     }
 
@@ -347,13 +339,11 @@ impl KeyboardHandler for AppData {
         event: KeyEvent,
     ) {
         if let Some(text) = sctk_key_event_to_slint(event) {
-            self.render_thread_sender.send(
-                WindowingMessage::SlintWindowEvent(
-                    WindowEvent::KeyReleased {
-                        text
-                    }
-                )
-            ).unwrap();
+            self.render_thread_sender
+                .send(WindowingMessage::SlintWindowEvent(
+                    WindowEvent::KeyReleased { text },
+                ))
+                .unwrap();
         }
     }
 
@@ -364,7 +354,8 @@ impl KeyboardHandler for AppData {
         _: &wl_keyboard::WlKeyboard,
         _serial: u32,
         _: Modifiers,
-    ) {}
+    ) {
+    }
 }
 
 fn sctk_key_event_to_slint(event: KeyEvent) -> Option<SharedString> {
@@ -384,9 +375,7 @@ fn sctk_key_event_to_slint(event: KeyEvent) -> Option<SharedString> {
         Keysym::Insert => Some(Key::Insert.into()),
         Keysym::Home => Some(Key::Home.into()),
         Keysym::End => Some(Key::End.into()),
-        _ => {
-            event.utf8.map(String::into)
-        }
+        _ => event.utf8.map(String::into),
     }
 }
 
@@ -405,41 +394,53 @@ impl PointerHandler for AppData {
             match event.kind {
                 Enter { .. } => {}
                 Leave { .. } => {
-                    self.render_thread_sender.send(
-                        WindowingMessage::SlintWindowEvent(WindowEvent::PointerExited)
-                    ).unwrap();
+                    self.render_thread_sender
+                        .send(WindowingMessage::SlintWindowEvent(
+                            WindowEvent::PointerExited,
+                        ))
+                        .unwrap();
                 }
                 Motion { .. } => {
-                    self.render_thread_sender.send(
-                        WindowingMessage::SlintWindowEvent(WindowEvent::PointerMoved {
-                            position 
-                        })
-                    ).unwrap();
+                    self.render_thread_sender
+                        .send(WindowingMessage::SlintWindowEvent(
+                            WindowEvent::PointerMoved { position },
+                        ))
+                        .unwrap();
                 }
                 Press { button, .. } => {
-                    self.render_thread_sender.send(
-                        WindowingMessage::SlintWindowEvent(WindowEvent::PointerPressed {
-                            position,
-                            button: wl_pointer_button_to_slint(button),
-                        })
-                    ).unwrap();
+                    self.render_thread_sender
+                        .send(WindowingMessage::SlintWindowEvent(
+                            WindowEvent::PointerPressed {
+                                position,
+                                button: wl_pointer_button_to_slint(button),
+                            },
+                        ))
+                        .unwrap();
                 }
                 Release { button, .. } => {
-                    self.render_thread_sender.send(
-                        WindowingMessage::SlintWindowEvent(WindowEvent::PointerReleased {
-                            position,
-                            button: wl_pointer_button_to_slint(button),
-                        })
-                    ).unwrap();
+                    self.render_thread_sender
+                        .send(WindowingMessage::SlintWindowEvent(
+                            WindowEvent::PointerReleased {
+                                position,
+                                button: wl_pointer_button_to_slint(button),
+                            },
+                        ))
+                        .unwrap();
                 }
-                Axis { horizontal, vertical, .. } => {
-                    self.render_thread_sender.send(
-                        WindowingMessage::SlintWindowEvent(WindowEvent::PointerScrolled {
-                            position,
-                            delta_x: horizontal.absolute as f32,
-                            delta_y: vertical.absolute as f32,
-                        })
-                    ).unwrap();
+                Axis {
+                    horizontal,
+                    vertical,
+                    ..
+                } => {
+                    self.render_thread_sender
+                        .send(WindowingMessage::SlintWindowEvent(
+                            WindowEvent::PointerScrolled {
+                                position,
+                                delta_x: horizontal.absolute as f32,
+                                delta_y: vertical.absolute as f32,
+                            },
+                        ))
+                        .unwrap();
                 }
             }
         }

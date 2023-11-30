@@ -1,28 +1,21 @@
-use std::{sync::{mpsc::{
-    Sender,
-    Receiver,
-}, Mutex, Arc}, thread, time::Duration};
 use chrono::Local;
-use image::RgbImage;
-use slint::{
-    platform::{
-        femtovg_renderer::FemtoVGRenderer,
-        WindowEvent,
-    },
-    PhysicalSize,
-    LogicalSize, SharedPixelBuffer,
-};
-use crate::{
-    window_adapter::MinimalFemtoVGWindow,
-    platform::CthuluSlintPlatform,
-    message::{
-        WindowingMessage,
-        RenderMessage,
-    },
-    egl::OpenGLContext,
+use std::{
+    sync::mpsc::{Receiver, Sender},
+    time::Duration,
 };
 
-slint::slint!{
+use crate::{
+    egl::OpenGLContext,
+    message::{RenderMessage, WindowingMessage},
+    platform::CthuluSlintPlatform,
+    window_adapter::MinimalFemtoVGWindow,
+};
+use slint::{
+    platform::{femtovg_renderer::FemtoVGRenderer, WindowEvent},
+    LogicalSize, PhysicalSize,
+};
+
+slint::slint! {
     import { LineEdit , TextEdit} from "std-widgets.slint";
     export component HelloWorld {
         in property<string> clock_text;
@@ -65,14 +58,23 @@ slint::slint!{
 
 pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<WindowingMessage>) {
     let (display_id, surface_id, size) = match receiver.recv().unwrap() {
-        WindowingMessage::SurfaceReady{ display_id, surface_id, size} => (display_id, surface_id, size),
-        message => panic!("First message sent to render thread is not ContextCreated. Is {:?}", message),
+        WindowingMessage::SurfaceReady {
+            display_id,
+            surface_id,
+            size,
+        } => (display_id, surface_id, size),
+        message => panic!(
+            "First message sent to render thread is not ContextCreated. Is {:?}",
+            message
+        ),
     };
 
     let context = OpenGLContext::new(display_id, surface_id, size);
     let renderer = FemtoVGRenderer::new(context).unwrap();
     let slint_window = MinimalFemtoVGWindow::new(renderer);
-    slint_window.set_size(slint::WindowSize::Physical(PhysicalSize::new(size.0, size.1)));
+    slint_window.set_size(slint::WindowSize::Physical(PhysicalSize::new(
+        size.0, size.1,
+    )));
 
     let platform = CthuluSlintPlatform::new(slint_window.clone());
 
@@ -84,7 +86,11 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
     ui.on_submit(move |pw| {
         let ui = ui_ref.upgrade().unwrap();
         ui.set_checking_password(true);
-        sender_clone.send(RenderMessage::UnlockWithPassword { password: pw.to_string() }).unwrap();
+        sender_clone
+            .send(RenderMessage::UnlockWithPassword {
+                password: pw.to_string(),
+            })
+            .unwrap();
     });
     ui.show().unwrap();
 
@@ -99,19 +105,15 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
             match message {
                 WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
                 WindowingMessage::SurfaceResize { size, serial } => {
-                    slint_window.dispatch_event(
-                        WindowEvent::Resized { 
-                            size: LogicalSize::new(size.0 as f32, size.1 as f32)
-                        }
-                    );
-                    sender.send(
-                        RenderMessage::AckResize { serial }
-                    ).unwrap();
+                    slint_window.dispatch_event(WindowEvent::Resized {
+                        size: LogicalSize::new(size.0 as f32, size.1 as f32),
+                    });
+                    sender.send(RenderMessage::AckResize { serial }).unwrap();
                     last_serial = serial as i64;
-                },
+                }
                 WindowingMessage::SurfaceResizeAcked { serial } => {
                     last_acked_serial = serial as i64;
-                },
+                }
                 WindowingMessage::UnlockFailed => ui.set_checking_password(false),
                 WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
             }
@@ -125,9 +127,10 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
 
         if !slint_window.has_active_animations() {
             let duration = slint::platform::duration_until_next_timer_update()
-                                        .map_or(Duration::from_millis(8), |d| d.min(Duration::from_millis(8)));
+                .map_or(Duration::from_millis(8), |d| {
+                    d.min(Duration::from_millis(8))
+                });
             std::thread::sleep(duration);
         }
     }
-
 }
