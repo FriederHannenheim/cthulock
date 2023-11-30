@@ -16,11 +16,15 @@ pub enum WindowingMessage {
         serial: u32
     },
     SlintWindowEvent(WindowEvent),
+    UnlockFailed,
 }
 
 #[derive(Debug)]
 pub enum RenderMessage {
     AckResize {
         serial: u32
+    },
+    UnlockWithPassword {
+        password: String,
     },
 }

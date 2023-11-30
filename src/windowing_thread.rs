@@ -1,17 +1,15 @@
-use std::{
-    sync::mpsc::{Sender, Receiver},
-    time::Duration,
+use std::{sync::mpsc::{Sender, Receiver}, collections::btree_map::Keys};
+use pam_client::{
+    Context, Flag,
+    conv_mock::Conversation,
 };
 use wayland_client::{
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_seat,
         wl_surface, wl_output, wl_callback, wl_display, wl_pointer,
     },
-    globals::{
-        registry_queue_init,
-    },
     Proxy, Connection, Dispatch, QueueHandle,
-    delegate_noop,
+    delegate_noop, globals::registry_queue_init,
 };
 use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_manager_v1,
@@ -33,10 +31,9 @@ use smithay_client_toolkit::{
 use slint::{
     platform::{
         WindowEvent,
-        PointerEventButton,
+        PointerEventButton, Key,
     },
-    LogicalPosition,
-    LogicalSize,
+    LogicalPosition, SharedString,
 };
 use crate::message::{
     RenderMessage,
@@ -57,7 +54,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<Ren
     let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=5, ()).unwrap();
     let wl_surface = compositor.create_surface(&qh, ());
     let output: wl_output::WlOutput = globals.bind(&qh, 1..=1, ()).unwrap();
-    let session_lock_manager: ext_session_lock_manager_v1::ExtSessionLockManagerV1 = globals.bind(&qh, 1..=1, ()).expect("ext_session_lock_v1 not available");
+    let session_lock_manager: ext_session_lock_manager_v1::ExtSessionLockManagerV1 = globals.bind(&qh, 1..=1, ()).expect("Your compositor does not support ext-session-lock-v1. Cthulock does not work without it");
     let session_lock = session_lock_manager.lock(&qh, ());
     let session_lock_surface = session_lock.get_lock_surface(&wl_surface, &output, &qh, ());
 
@@ -83,6 +80,27 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<Ren
                         WindowingMessage::SurfaceResizeAcked { serial }
                     ).unwrap();
                 }
+                RenderMessage::UnlockWithPassword { password } => {
+                    let mut context = Context::new(
+                        "cthulock",
+                        None,
+                        Conversation::with_credentials(
+                            whoami::username(), 
+                            password
+                        )
+                    ).expect("Failed to initialize PAM context");
+
+                    if  context.authenticate(Flag::NONE).is_ok() && 
+                        context.acct_mgmt(Flag::NONE).is_ok() 
+                    {
+                        log::info!("authentication successfull, quitting...");
+                        state.session_lock.unlock_and_destroy();
+                        event_queue.roundtrip(&mut state).unwrap();
+                        state.running = false;
+                    } else {
+                        state.render_thread_sender.send(WindowingMessage::UnlockFailed).unwrap();
+                    }
+                }
             }
         }
     }
@@ -103,8 +121,6 @@ struct AppData {
     // TODO: Support multiple outputs
     session_lock: ext_session_lock_v1::ExtSessionLockV1,
     session_lock_surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1,
-
-    sync_callback: Option<wl_callback::WlCallback>,
 
     seat_state: SeatState,
     keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -134,7 +150,6 @@ impl AppData {
             session_lock,
             session_lock_surface,
             wl_display: display,
-            sync_callback: None,
             seat_state,
             keyboard: None,
             pointer: None,
@@ -161,31 +176,6 @@ impl ProvidesRegistryState for AppData {
         &mut self.registry_state
     }
     registry_handlers![SeatState,];
-}
-
-impl Dispatch<wl_callback::WlCallback, ()> for AppData {
-    fn event(
-        state: &mut Self,
-        callback: &wl_callback::WlCallback,
-        event: wl_callback::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        if state.sync_callback.is_none() {
-            return;
-        }
-        match event {
-            wl_callback::Event::Done { .. } => {
-                if callback == state.sync_callback.as_ref().unwrap() {
-                    state.running = false;
-                    state.sync_callback = None;
-                }
-            }
-            _ => {}
-        }
-
-    }
 }
 
 impl Dispatch<ext_session_lock_v1::ExtSessionLockV1, ()> for AppData {
@@ -337,11 +327,11 @@ impl KeyboardHandler for AppData {
         _: u32,
         event: KeyEvent,
     ) {
-        if let Some(text) = event.utf8 {
+        if let Some(text) = sctk_key_event_to_slint(event) {
             self.render_thread_sender.send(
                 WindowingMessage::SlintWindowEvent(
                     WindowEvent::KeyPressed {
-                        text: text.into()
+                        text
                     }
                 )
             ).unwrap();
@@ -351,25 +341,19 @@ impl KeyboardHandler for AppData {
     fn release_key(
         &mut self,
         _: &Connection,
-        qh: &QueueHandle<Self>,
+        _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
         _: u32,
         event: KeyEvent,
     ) {
-        if let Some(text) = event.utf8 {
+        if let Some(text) = sctk_key_event_to_slint(event) {
             self.render_thread_sender.send(
                 WindowingMessage::SlintWindowEvent(
                     WindowEvent::KeyReleased {
-                        text: text.into()
+                        text
                     }
                 )
             ).unwrap();
-        }
-        // Debug exit once escape is pressed
-        if event.keysym == Keysym::Escape {
-            self.session_lock.unlock_and_destroy();
-            let sync_callback = self.wl_display.sync(qh, ());
-            self.sync_callback = Some(sync_callback);
         }
     }
 
@@ -383,6 +367,28 @@ impl KeyboardHandler for AppData {
     ) {}
 }
 
+fn sctk_key_event_to_slint(event: KeyEvent) -> Option<SharedString> {
+    match event.keysym {
+        Keysym::BackSpace => Some(Key::Backspace.into()),
+        Keysym::Tab => Some(Key::Tab.into()),
+        Keysym::Return => Some(Key::Return.into()),
+        Keysym::Delete => Some(Key::Delete.into()),
+        Keysym::Shift_L | Keysym::Shift_R => Some(Key::Shift.into()),
+        Keysym::Control_L | Keysym::Control_R => Some(Key::Control.into()),
+        Keysym::Alt_L | Keysym::Alt_R => Some(Key::Alt.into()),
+        Keysym::Caps_Lock => Some(Key::CapsLock.into()),
+        Keysym::Up => Some(Key::UpArrow.into()),
+        Keysym::Down => Some(Key::DownArrow.into()),
+        Keysym::Left => Some(Key::LeftArrow.into()),
+        Keysym::Right => Some(Key::RightArrow.into()),
+        Keysym::Insert => Some(Key::Insert.into()),
+        Keysym::Home => Some(Key::Home.into()),
+        Keysym::End => Some(Key::End.into()),
+        _ => {
+            event.utf8.map(String::into)
+        }
+    }
+}
 
 impl PointerHandler for AppData {
     fn pointer_frame(

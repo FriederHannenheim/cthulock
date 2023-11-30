@@ -1,14 +1,16 @@
-use std::sync::mpsc::{
+use std::{sync::{mpsc::{
     Sender,
     Receiver,
-};
+}, Mutex, Arc}, thread, time::Duration};
+use chrono::Local;
+use image::RgbImage;
 use slint::{
     platform::{
         femtovg_renderer::FemtoVGRenderer,
         WindowEvent,
     },
     PhysicalSize,
-    LogicalSize,
+    LogicalSize, SharedPixelBuffer,
 };
 use crate::{
     window_adapter::MinimalFemtoVGWindow,
@@ -21,16 +23,41 @@ use crate::{
 };
 
 slint::slint!{
-    // import { Image } from "std-widgets.slint";
+    import { LineEdit , TextEdit} from "std-widgets.slint";
     export component HelloWorld {
         in property<string> clock_text;
+        in property<bool> checking_password;
+        callback submit <=> password.accepted;
+        forward-focus: password;
+        states [
+            checking when checking-password : {
+                password.enabled: false;
+            }
+        ]
+
         Image {
-            // image-fit: fill;
             width: parent.width;
             height: parent.height;
             source: @image-url("/home/fried/.config/wallpaper.png");
-            Text {
-                text: clock_text;
+            HorizontalLayout {
+                VerticalLayout {
+                    alignment: end;
+                    spacing: 10px;
+                    padding: 40px;
+                    width: 350px;
+                    Text {
+                        text: clock_text;
+                        horizontal-alignment: center;
+                        font-size: 60pt;
+                        color: white;
+                    }
+                    password := LineEdit {
+                        enabled: true;
+                        horizontal-alignment: left;
+                        input-type: InputType.password;
+                        placeholder-text: "password...";
+                    }
+                }
             }
         }
     }
@@ -51,13 +78,22 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
 
     slint::platform::set_platform(Box::new(platform)).unwrap();
     let ui = HelloWorld::new().expect("Failed to load UI");
-    ui.set_clock_text("jeek".into());
+
+    let sender_clone = sender.clone();
+    let ui_ref = ui.as_weak();
+    ui.on_submit(move |pw| {
+        let ui = ui_ref.upgrade().unwrap();
+        ui.set_checking_password(true);
+        sender_clone.send(RenderMessage::UnlockWithPassword { password: pw.to_string() }).unwrap();
+    });
     ui.show().unwrap();
 
     let running = true;
     let mut last_serial = -1;
     let mut last_acked_serial = -1;
     while running {
+        slint::platform::update_timers_and_animations();
+
         // handle messages
         while let Ok(message) = receiver.try_recv() {
             match message {
@@ -76,13 +112,21 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
                 WindowingMessage::SurfaceResizeAcked { serial } => {
                     last_acked_serial = serial as i64;
                 },
+                WindowingMessage::UnlockFailed => ui.set_checking_password(false),
                 WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
             }
         }
-        
-        slint::platform::update_timers_and_animations();
+        let time = Local::now();
+        ui.set_clock_text(time.format("%H:%M").to_string().into());
+
         if last_serial == last_acked_serial {
             slint_window.draw_if_needed();
+        }
+
+        if !slint_window.has_active_animations() {
+            let duration = slint::platform::duration_until_next_timer_update()
+                                        .map_or(Duration::from_millis(8), |d| d.min(Duration::from_millis(8)));
+            std::thread::sleep(duration);
         }
     }
 

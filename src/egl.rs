@@ -94,6 +94,7 @@ unsafe impl OpenGLInterface for OpenGLContext {
     fn ensure_current(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         log::debug!("ensuring context is current");
         if !self.context.is_current() {
+            log::info!("context not current. Making current");
             self.context.make_current(&self.surface)?;
         }
         Ok(())
