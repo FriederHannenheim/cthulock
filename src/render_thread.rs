@@ -20,6 +20,7 @@ slint::slint! {
     export component HelloWorld {
         in property<string> clock_text;
         in property<bool> checking_password;
+        in-out property<string> password <=> password.text;
         callback submit <=> password.accepted;
         forward-focus: password;
         states [
@@ -114,7 +115,10 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
                 WindowingMessage::SurfaceResizeAcked { serial } => {
                     last_acked_serial = serial as i64;
                 }
-                WindowingMessage::UnlockFailed => ui.set_checking_password(false),
+                WindowingMessage::UnlockFailed =>  {
+                    ui.set_checking_password(false);
+                    ui.set_password("".into());
+                }
                 WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
             }
         }
