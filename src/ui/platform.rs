@@ -1,4 +1,4 @@
-use crate::window_adapter::MinimalFemtoVGWindow;
+use crate::ui::window_adapter::MinimalFemtoVGWindow;
 use slint::{
     platform::{Platform, WindowAdapter},
     PlatformError,
@@ -8,13 +8,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub struct CthuluSlintPlatform {
+pub struct CthulockSlintPlatform {
     window: Rc<MinimalFemtoVGWindow>,
 
     start_time: Instant,
 }
 
-impl CthuluSlintPlatform {
+impl CthulockSlintPlatform {
     pub fn new(window: Rc<MinimalFemtoVGWindow>) -> Self {
         Self {
             window,
@@ -23,7 +23,7 @@ impl CthuluSlintPlatform {
     }
 }
 
-impl Platform for CthuluSlintPlatform {
+impl Platform for CthulockSlintPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
         Ok(self.window.clone())
     }

@@ -1,8 +1,8 @@
 use std::{sync::mpsc, thread};
 
 use crate::{
-    message::{RenderMessage, WindowingMessage},
-    render_thread::render_thread,
+    message::{UiMessage, WindowingMessage},
+    ui::ui_thread,
     windowing_thread::windowing_thread,
     common::CthulockError,
 };
@@ -10,11 +10,8 @@ use crate::{
 type Result<T> = std::result::Result<T, CthulockError>;
 
 mod common;
-mod egl;
 mod message;
-mod platform;
-mod render_thread;
-mod window_adapter;
+mod ui;
 mod windowing_thread;
 
 fn main() -> Result<()> {
@@ -23,9 +20,9 @@ fn main() -> Result<()> {
     let theme = load_theme()?;
 
     let (sender_to_render, receiver_from_windowing) = mpsc::channel::<WindowingMessage>();
-    let (sender_to_windowing, receiver_from_render) = mpsc::channel::<RenderMessage>();
+    let (sender_to_windowing, receiver_from_render) = mpsc::channel::<UiMessage>();
     thread::spawn(move || {
-        render_thread(&theme, sender_to_windowing, receiver_from_windowing).unwrap();
+        ui_thread(&theme, sender_to_windowing, receiver_from_windowing).unwrap();
     });
 
     windowing_thread(sender_to_render, receiver_from_render);
@@ -48,7 +45,7 @@ fn load_theme() -> Result<String> {
     })?;
 
     let theme_path = xdg_dirs.find_config_file("style.slint").ok_or(
-        CthulockError::new("Could not find theme.slint in config paths")
+        CthulockError::new("Could not find style.slint in config paths")
     )?;
     
     std::fs::read_to_string(theme_path).map_err(|e| {

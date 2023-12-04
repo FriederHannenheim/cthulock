@@ -20,7 +20,7 @@ pub enum WindowingMessage {
 }
 
 #[derive(Debug)]
-pub enum RenderMessage {
+pub enum UiMessage {
     AckResize { serial: u32 },
     UnlockWithPassword { password: String },
 }

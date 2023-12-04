@@ -1,4 +1,4 @@
-use crate::message::{RenderMessage, WindowingMessage};
+use crate::message::{UiMessage, WindowingMessage};
 use pam_client::{conv_mock::Conversation, Context, Flag};
 use slint::{
     platform::{Key, PointerEventButton, WindowEvent},
@@ -28,8 +28,7 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_manager_v1, ext_session_lock_surface_v1, ext_session_lock_v1,
 };
 
-// TODO: Rename windowing to window in windowing_thread and WindowingMessage
-pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<RenderMessage>) {
+pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiMessage>) {
     let conn = Connection::connect_to_env().unwrap();
 
     let display = conn.display();
@@ -61,7 +60,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<Ren
 
         while let Ok(message) = receiver.try_recv() {
             match message {
-                RenderMessage::AckResize { serial } => {
+                UiMessage::AckResize { serial } => {
                     log::debug!("ack configure serial: {serial}");
                     state.session_lock_surface.ack_configure(serial);
                     state
@@ -69,7 +68,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<Ren
                         .send(WindowingMessage::SurfaceResizeAcked { serial })
                         .unwrap();
                 }
-                RenderMessage::UnlockWithPassword { password } => {
+                UiMessage::UnlockWithPassword { password } => {
                     let mut context = Context::new(
                         "cthulock",
                         None,

@@ -5,10 +5,12 @@ use std::{
 };
 use futures::executor::block_on;
 use crate::{
-    egl::OpenGLContext,
-    message::{RenderMessage, WindowingMessage},
-    platform::CthuluSlintPlatform,
-    window_adapter::MinimalFemtoVGWindow, Result, common::CthulockError,
+    message::{UiMessage, WindowingMessage},
+    ui:: {
+        egl::OpenGLContext,
+        platform::CthulockSlintPlatform,
+        window_adapter::MinimalFemtoVGWindow
+    }, Result, common::CthulockError,
 };
 use slint::{
     platform::{femtovg_renderer::FemtoVGRenderer, WindowEvent},
@@ -21,7 +23,11 @@ use slint_interpreter::{
     ComponentHandle, ComponentInstance
 };
 
-pub fn render_thread(theme: &str, sender: Sender<RenderMessage>, receiver: Receiver<WindowingMessage>) -> Result<()>{
+mod egl;
+mod platform;
+mod window_adapter;
+
+pub fn ui_thread(theme: &str, sender: Sender<UiMessage>, receiver: Receiver<WindowingMessage>) -> Result<()>{
     let (display_id, surface_id, size) = match receiver.recv().unwrap() {
         WindowingMessage::SurfaceReady {
             display_id,
@@ -41,7 +47,7 @@ pub fn render_thread(theme: &str, sender: Sender<RenderMessage>, receiver: Recei
         size.0, size.1,
     )));
 
-    let platform = CthuluSlintPlatform::new(slint_window.clone());
+    let platform = CthulockSlintPlatform::new(slint_window.clone());
     slint::platform::set_platform(Box::new(platform)).unwrap();
     
     let xdg_dirs = xdg::BaseDirectories::with_prefix("cthulock").unwrap();
@@ -66,7 +72,7 @@ pub fn render_thread(theme: &str, sender: Sender<RenderMessage>, receiver: Recei
                     slint_window.dispatch_event(WindowEvent::Resized {
                         size: LogicalSize::new(size.0 as f32, size.1 as f32),
                     });
-                    sender.send(RenderMessage::AckResize { serial }).unwrap();
+                    sender.send(UiMessage::AckResize { serial }).unwrap();
                     last_serial = serial as i64;
                 }
                 WindowingMessage::SurfaceResizeAcked { serial } => {
@@ -103,7 +109,7 @@ pub fn render_thread(theme: &str, sender: Sender<RenderMessage>, receiver: Recei
 }
 
 
-fn create_ui(sender: Sender<RenderMessage>, theme: &str, include_paths: Vec<PathBuf>) -> Result<ComponentInstance> {
+fn create_ui(sender: Sender<UiMessage>, theme: &str, include_paths: Vec<PathBuf>) -> Result<ComponentInstance> {
     let mut compiler = ComponentCompiler::default();
     compiler.set_include_paths(include_paths);
 
@@ -123,7 +129,7 @@ fn create_ui(sender: Sender<RenderMessage>, theme: &str, include_paths: Vec<Path
             CthulockError::property_fail("checking_password")
         }).unwrap();
         sender_clone
-            .send(RenderMessage::UnlockWithPassword {
+            .send(UiMessage::UnlockWithPassword {
                 password: password.to_string(),
             })
             .unwrap();
