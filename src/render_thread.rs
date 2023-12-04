@@ -1,63 +1,27 @@
 use chrono::Local;
 use std::{
     sync::mpsc::{Receiver, Sender},
-    time::Duration,
+    time::Duration, path::PathBuf,
 };
-
+use futures::executor::block_on;
 use crate::{
     egl::OpenGLContext,
     message::{RenderMessage, WindowingMessage},
     platform::CthuluSlintPlatform,
-    window_adapter::MinimalFemtoVGWindow,
+    window_adapter::MinimalFemtoVGWindow, Result, common::CthulockError,
 };
 use slint::{
     platform::{femtovg_renderer::FemtoVGRenderer, WindowEvent},
     LogicalSize, PhysicalSize,
 };
+use slint_interpreter::{
+    Value,
+    SharedString,
+    ComponentCompiler,
+    ComponentHandle, ComponentInstance
+};
 
-slint::slint! {
-    import { LineEdit , TextEdit} from "std-widgets.slint";
-    export component HelloWorld {
-        in property<string> clock_text;
-        in property<bool> checking_password;
-        in-out property<string> password <=> password.text;
-        callback submit <=> password.accepted;
-        forward-focus: password;
-        states [
-            checking when checking-password : {
-                password.enabled: false;
-            }
-        ]
-
-        Image {
-            width: parent.width;
-            height: parent.height;
-            source: @image-url("/home/fried/.config/wallpaper.png");
-            HorizontalLayout {
-                VerticalLayout {
-                    alignment: end;
-                    spacing: 10px;
-                    padding: 40px;
-                    width: 350px;
-                    Text {
-                        text: clock_text;
-                        horizontal-alignment: center;
-                        font-size: 60pt;
-                        color: white;
-                    }
-                    password := LineEdit {
-                        enabled: true;
-                        horizontal-alignment: left;
-                        input-type: InputType.password;
-                        placeholder-text: "password...";
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<WindowingMessage>) {
+pub fn render_thread(theme: &str, sender: Sender<RenderMessage>, receiver: Receiver<WindowingMessage>) -> Result<()>{
     let (display_id, surface_id, size) = match receiver.recv().unwrap() {
         WindowingMessage::SurfaceReady {
             display_id,
@@ -78,21 +42,14 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
     )));
 
     let platform = CthuluSlintPlatform::new(slint_window.clone());
-
     slint::platform::set_platform(Box::new(platform)).unwrap();
-    let ui = HelloWorld::new().expect("Failed to load UI");
+    
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("cthulock").unwrap();
+    let mut config_dirs = xdg_dirs.get_config_dirs();
+    config_dirs.push(xdg_dirs.get_config_home());
 
-    let sender_clone = sender.clone();
-    let ui_ref = ui.as_weak();
-    ui.on_submit(move |pw| {
-        let ui = ui_ref.upgrade().unwrap();
-        ui.set_checking_password(true);
-        sender_clone
-            .send(RenderMessage::UnlockWithPassword {
-                password: pw.to_string(),
-            })
-            .unwrap();
-    });
+    log::debug!("Config directories: {:?}", config_dirs);
+    let ui = create_ui(sender.clone(), theme, config_dirs)?;
     ui.show().unwrap();
 
     let running = true;
@@ -116,14 +73,18 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
                     last_acked_serial = serial as i64;
                 }
                 WindowingMessage::UnlockFailed =>  {
-                    ui.set_checking_password(false);
-                    ui.set_password("".into());
+                    ui.set_property("checking_password", false.into()).map_err(|_| {
+                        CthulockError::property_fail("checking_password")
+                    })?;
+                    ui.set_property("password", SharedString::from("").into()).map_err(|_| {
+                        CthulockError::property_fail("password")
+                    })?;
                 }
                 WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
             }
         }
         let time = Local::now();
-        ui.set_clock_text(time.format("%H:%M").to_string().into());
+        let _ = ui.set_property("clock_text", SharedString::from(time.format("%H:%M").to_string()).into());
 
         if last_serial == last_acked_serial {
             slint_window.draw_if_needed();
@@ -137,4 +98,39 @@ pub fn render_thread(sender: Sender<RenderMessage>, receiver: Receiver<Windowing
             std::thread::sleep(duration);
         }
     }
+
+    Ok(())
+}
+
+
+fn create_ui(sender: Sender<RenderMessage>, theme: &str, include_paths: Vec<PathBuf>) -> Result<ComponentInstance> {
+    let mut compiler = ComponentCompiler::default();
+    compiler.set_include_paths(include_paths);
+
+    let definition = block_on(compiler.build_from_source(theme.into(), Default::default()));
+    slint_interpreter::print_diagnostics(&compiler.diagnostics());
+    let ui = definition.unwrap().create().unwrap();
+
+    let sender_clone = sender.clone();
+    let ui_ref = ui.as_weak();
+    ui.set_callback("submit", move |args: &[Value]| -> Value {
+        let ui = ui_ref.upgrade().unwrap();
+        let Value::String(password) = args[0].clone() else {
+            panic!("Value in submit callback is not a String");
+        };
+
+        ui.set_property("checking_password", true.into()).map_err(|_| {
+            CthulockError::property_fail("checking_password")
+        }).unwrap();
+        sender_clone
+            .send(RenderMessage::UnlockWithPassword {
+                password: password.to_string(),
+            })
+            .unwrap();
+        Value::Void
+    }).map_err(|_| {
+        CthulockError::callback_bind_fail("submit")
+    })?;
+
+    Ok(ui)
 }
