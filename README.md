@@ -34,4 +34,5 @@ Copy the sample config into `$XDG_CONFIG_HOME/cthulock` and start customizing it
 
 For details on which properties and callbacks your Slint component needs to have look at the [configuration docs](./docs/configuration.md)
 
+## Credits
 The wallpaper in the example configuration is "[Wallpaper](https://www.flickr.com/photos/131042142@N05/16252364850)" by [DyosEL](https://www.flickr.com/photos/131042142@N05) and is licensed under CC BY 2.0. 
