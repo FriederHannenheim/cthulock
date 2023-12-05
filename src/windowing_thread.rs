@@ -1,4 +1,4 @@
-use crate::message::{UiMessage, WindowingMessage};
+use crate::{message::{UiMessage, WindowingMessage}, Result, common::CthulockError};
 use pam_client::{conv_mock::Conversation, Context, Flag};
 use slint::{
     platform::{Key, PointerEventButton, WindowEvent},
@@ -28,8 +28,10 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_manager_v1, ext_session_lock_surface_v1, ext_session_lock_v1,
 };
 
-pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiMessage>) {
-    let conn = Connection::connect_to_env().unwrap();
+pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiMessage>) -> Result<()> {
+    let conn = Connection::connect_to_env().map_err(|_| {
+        CthulockError::new("Failed to connect to wayland.")
+    })?;
 
     let display = conn.display();
 
@@ -41,7 +43,9 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
     let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=5, ()).unwrap();
     let wl_surface = compositor.create_surface(&qh, ());
     let output: wl_output::WlOutput = globals.bind(&qh, 1..=1, ()).unwrap();
-    let session_lock_manager: ext_session_lock_manager_v1::ExtSessionLockManagerV1 = globals.bind(&qh, 1..=1, ()).expect("Your compositor does not support ext-session-lock-v1. Cthulock does not work without it");
+    let session_lock_manager: ext_session_lock_manager_v1::ExtSessionLockManagerV1 = globals.bind(&qh, 1..=1, ()).map_err(|_| {
+        CthulockError::new("Could not bind ext-session-lock-v1. Your compositor probably does not support this.")
+    })?;
     let session_lock = session_lock_manager.lock(&qh, ());
     let session_lock_surface = session_lock.get_lock_surface(&wl_surface, &output, &qh, ());
 
@@ -52,7 +56,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
         session_lock,
         session_lock_surface,
         SeatState::new(&globals, &qh),
-        sender,
+        sender
     );
 
     while state.running {
@@ -80,6 +84,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
                         && context.acct_mgmt(Flag::NONE).is_ok()
                     {
                         log::info!("authentication successfull, quitting...");
+                        state.render_thread_sender.send(WindowingMessage::Quit).unwrap();
                         state.session_lock.unlock_and_destroy();
                         event_queue.roundtrip(&mut state).unwrap();
                         state.running = false;
@@ -93,6 +98,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
             }
         }
     }
+    Ok(())
 }
 
 // This struct represents the state of our app

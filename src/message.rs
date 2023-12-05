@@ -17,6 +17,7 @@ pub enum WindowingMessage {
     },
     SlintWindowEvent(WindowEvent),
     UnlockFailed,
+    Quit,
 }
 
 #[derive(Debug)]

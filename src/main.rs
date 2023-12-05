@@ -1,5 +1,8 @@
 use std::{sync::mpsc, thread};
 
+use futures::executor::block_on;
+use slint_interpreter::{ComponentCompiler, ComponentDefinition};
+
 use crate::{
     message::{UiMessage, WindowingMessage},
     ui::ui_thread,
@@ -17,15 +20,18 @@ mod windowing_thread;
 fn main() -> Result<()> {
     init_logger();
 
-    let theme = load_theme()?;
+    let style = load_style()?;
 
     let (sender_to_render, receiver_from_windowing) = mpsc::channel::<WindowingMessage>();
     let (sender_to_windowing, receiver_from_render) = mpsc::channel::<UiMessage>();
-    thread::spawn(move || {
-        ui_thread(&theme, sender_to_windowing, receiver_from_windowing).unwrap();
-    });
 
-    windowing_thread(sender_to_render, receiver_from_render);
+    thread::spawn(move || {
+        if windowing_thread(sender_to_render.clone(), receiver_from_render).is_err() {
+            sender_to_render.send(WindowingMessage::Quit).unwrap();
+        }
+    });
+    
+    ui_thread(style, sender_to_windowing, receiver_from_windowing)?;
 
     Ok(())
 }
@@ -39,7 +45,7 @@ fn init_logger() {
     env_logger::init();
 }
 
-fn load_theme() -> Result<String> {
+fn load_style() -> Result<ComponentDefinition> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("cthulock").map_err(|_| {
        CthulockError::new("Failed to get XDG-Directories. This can only happen on Windows. Cthulock is not a Windows program.")
     })?;
@@ -48,7 +54,19 @@ fn load_theme() -> Result<String> {
         CthulockError::new("Could not find style.slint in config paths")
     )?;
     
-    std::fs::read_to_string(theme_path).map_err(|e| {
+    let style = std::fs::read_to_string(theme_path).map_err(|e| {
         CthulockError::new(&e.to_string())
-    })
+    })?;
+
+
+    let mut config_dirs = xdg_dirs.get_config_dirs();
+    config_dirs.push(xdg_dirs.get_config_home());
+    let mut compiler = ComponentCompiler::default();
+    compiler.set_include_paths(config_dirs);
+
+    let definition = block_on(compiler.build_from_source(style.into(), Default::default()));
+    slint_interpreter::print_diagnostics(&compiler.diagnostics());
+    definition.ok_or(
+        CthulockError::new("Compiling the Slint code failed")
+    )
 }

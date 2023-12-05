@@ -20,3 +20,10 @@ forward-focus: password;
 // TODO: The user should be able to switch between 12 and 24 hour clock. Currently it is always 24 hour
 in property<string> clock_text;
 ```
+
+Testing your configuration in a nested wayland session is always encouraged. Cthulock will test if your slint code compiles before locking the screen but if you don't leave a way to unlock the screen you might get locked out of your PC until a reboot. 
+
+Testing is best done using labwc:
+```
+$ labwc -s cthulock
+```

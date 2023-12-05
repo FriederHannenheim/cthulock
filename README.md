@@ -1,5 +1,8 @@
 # Cthulock
 Cthulock is a screen locker for Wayland focused on customizability. You can style your lock screen using the [Slint](https://slint.dev/docs.html) language. An example config is already provided for you to build upon.
+
+Cthulock is still in development, if you have any suggestions for features please open an issue. Code contributions through pull requests are also always welcome.
+
 ## Example Screenshot
 ![Example Screenshot](./docs/example_config_screenshot.png)
 ## Installation

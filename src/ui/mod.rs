@@ -1,9 +1,8 @@
 use chrono::Local;
 use std::{
     sync::mpsc::{Receiver, Sender},
-    time::Duration, path::PathBuf,
+    time::Duration, rc::Rc,
 };
-use futures::executor::block_on;
 use crate::{
     message::{UiMessage, WindowingMessage},
     ui:: {
@@ -19,43 +18,17 @@ use slint::{
 use slint_interpreter::{
     Value,
     SharedString,
-    ComponentCompiler,
-    ComponentHandle, ComponentInstance
+    ComponentHandle, ComponentInstance, ComponentDefinition
 };
 
 mod egl;
 mod platform;
 mod window_adapter;
 
-pub fn ui_thread(theme: &str, sender: Sender<UiMessage>, receiver: Receiver<WindowingMessage>) -> Result<()>{
-    let (display_id, surface_id, size) = match receiver.recv().unwrap() {
-        WindowingMessage::SurfaceReady {
-            display_id,
-            surface_id,
-            size,
-        } => (display_id, surface_id, size),
-        message => panic!(
-            "First message sent to render thread is not ContextCreated. Is {:?}",
-            message
-        ),
-    };
-
-    let context = OpenGLContext::new(display_id, surface_id, size);
-    let renderer = FemtoVGRenderer::new(context).unwrap();
-    let slint_window = MinimalFemtoVGWindow::new(renderer);
-    slint_window.set_size(slint::WindowSize::Physical(PhysicalSize::new(
-        size.0, size.1,
-    )));
-
-    let platform = CthulockSlintPlatform::new(slint_window.clone());
-    slint::platform::set_platform(Box::new(platform)).unwrap();
+pub fn ui_thread(style: ComponentDefinition, sender: Sender<UiMessage>, receiver: Receiver<WindowingMessage>) -> Result<()>{
+    let slint_window = wait_for_configure_and_set_platform(&receiver)?;
     
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("cthulock").unwrap();
-    let mut config_dirs = xdg_dirs.get_config_dirs();
-    config_dirs.push(xdg_dirs.get_config_home());
-
-    log::debug!("Config directories: {:?}", config_dirs);
-    let ui = create_ui(sender.clone(), theme, config_dirs)?;
+    let ui = create_ui(sender.clone(), style)?;
     ui.show().unwrap();
 
     let running = true;
@@ -85,7 +58,11 @@ pub fn ui_thread(theme: &str, sender: Sender<UiMessage>, receiver: Receiver<Wind
                     ui.set_property("password", SharedString::from("").into()).map_err(|_| {
                         CthulockError::property_fail("password")
                     })?;
-                }
+                },
+                WindowingMessage::Quit => {
+                    log::info!("quitting UI thread...");
+                    return Ok(());
+                },
                 WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
             }
         }
@@ -109,13 +86,8 @@ pub fn ui_thread(theme: &str, sender: Sender<UiMessage>, receiver: Receiver<Wind
 }
 
 
-fn create_ui(sender: Sender<UiMessage>, theme: &str, include_paths: Vec<PathBuf>) -> Result<ComponentInstance> {
-    let mut compiler = ComponentCompiler::default();
-    compiler.set_include_paths(include_paths);
-
-    let definition = block_on(compiler.build_from_source(theme.into(), Default::default()));
-    slint_interpreter::print_diagnostics(&compiler.diagnostics());
-    let ui = definition.unwrap().create().unwrap();
+fn create_ui(sender: Sender<UiMessage>, style: ComponentDefinition) -> Result<ComponentInstance> {
+    let ui = style.create().unwrap();
 
     let sender_clone = sender.clone();
     let ui_ref = ui.as_weak();
@@ -139,4 +111,30 @@ fn create_ui(sender: Sender<UiMessage>, theme: &str, include_paths: Vec<PathBuf>
     })?;
 
     Ok(ui)
+}
+
+fn wait_for_configure_and_set_platform(receiver: &Receiver<WindowingMessage>) -> Result<Rc<MinimalFemtoVGWindow>> {
+    let (display_id, surface_id, size) = match receiver.recv().unwrap() {
+        WindowingMessage::SurfaceReady {
+            display_id,
+            surface_id,
+            size,
+        } => (display_id, surface_id, size),
+        message => panic!(
+            "First message sent to render thread is not SurfaceReady. Is {:?}",
+            message
+        ),
+    };
+
+    let context = OpenGLContext::new(display_id, surface_id, size);
+    let renderer = FemtoVGRenderer::new(context).unwrap();
+    let slint_window = MinimalFemtoVGWindow::new(renderer);
+    slint_window.set_size(slint::WindowSize::Physical(PhysicalSize::new(
+        size.0, size.1,
+    )));
+
+    let platform = CthulockSlintPlatform::new(slint_window.clone());
+    slint::platform::set_platform(Box::new(platform)).unwrap();
+
+    Ok(slint_window)
 }
