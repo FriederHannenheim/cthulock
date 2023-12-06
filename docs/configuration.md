@@ -1,5 +1,5 @@
 # Configuration
-Your Slint component always needs the following:
+Place a style.slint file in `$XDG_CONFIG_HOME/cthulock` or `$HOME/.config/cthulock`. Your Slint component always needs the following:
 ```slint
 // will be set when the password is currently being checked
 // you can use this to disable a text box for example
