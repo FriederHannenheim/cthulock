@@ -12,8 +12,8 @@ use crate::{
     }, Result, common::CthulockError,
 };
 use slint::{
-    platform::{femtovg_renderer::FemtoVGRenderer, WindowEvent},
-    LogicalSize, PhysicalSize,
+    platform::femtovg_renderer::FemtoVGRenderer,
+    PhysicalSize,
 };
 use slint_interpreter::{
     Value,
@@ -32,46 +32,17 @@ pub fn ui_thread(style: ComponentDefinition, sender: Sender<UiMessage>, receiver
     ui.show().unwrap();
 
     let running = true;
-    let mut last_serial = -1;
-    let mut last_acked_serial = -1;
     while running {
         slint::platform::update_timers_and_animations();
 
-        // handle messages
-        while let Ok(message) = receiver.try_recv() {
-            match message {
-                WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
-                WindowingMessage::SurfaceResize { size, serial } => {
-                    slint_window.dispatch_event(WindowEvent::Resized {
-                        size: LogicalSize::new(size.0 as f32, size.1 as f32),
-                    });
-                    sender.send(UiMessage::AckResize { serial }).unwrap();
-                    last_serial = serial as i64;
-                }
-                WindowingMessage::SurfaceResizeAcked { serial } => {
-                    last_acked_serial = serial as i64;
-                }
-                WindowingMessage::UnlockFailed =>  {
-                    ui.set_property("checking_password", false.into()).map_err(|_| {
-                        CthulockError::property_fail("checking_password")
-                    })?;
-                    ui.set_property("password", SharedString::from("").into()).map_err(|_| {
-                        CthulockError::property_fail("password")
-                    })?;
-                },
-                WindowingMessage::Quit => {
-                    log::info!("quitting UI thread...");
-                    return Ok(());
-                },
-                WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
-            }
+        if handle_messages(&receiver, Rc::clone(&slint_window), &ui).is_err() {
+            return Ok(());
         }
+
         let time = Local::now();
         let _ = ui.set_property("clock_text", SharedString::from(time.format("%H:%M").to_string()).into());
 
-        if last_serial == last_acked_serial {
-            slint_window.draw_if_needed();
-        }
+        slint_window.draw_if_needed();
 
         if !slint_window.has_active_animations() {
             let duration = slint::platform::duration_until_next_timer_update()
@@ -85,6 +56,28 @@ pub fn ui_thread(style: ComponentDefinition, sender: Sender<UiMessage>, receiver
     Ok(())
 }
 
+fn handle_messages(receiver: &Receiver<WindowingMessage>, slint_window: Rc<MinimalFemtoVGWindow>, ui: &ComponentInstance) -> Result<()> {
+    while let Ok(message) = receiver.try_recv() {
+        match message {
+            WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
+            WindowingMessage::UnlockFailed =>  {
+                ui.set_property("checking_password", false.into()).map_err(|_| {
+                    CthulockError::property_fail("checking_password")
+                })?;
+                ui.set_property("password", SharedString::from("").into()).map_err(|_| {
+                    CthulockError::property_fail("password")
+                })?;
+            },
+            WindowingMessage::Quit => {
+                // TODO: really quit
+                log::info!("quitting UI thread...");
+                return Ok(());
+            },
+            WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
+        }
+    }
+    Ok(())
+}
 
 fn create_ui(sender: Sender<UiMessage>, style: ComponentDefinition) -> Result<ComponentInstance> {
     let ui = style.create().unwrap();

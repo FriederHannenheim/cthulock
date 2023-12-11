@@ -47,14 +47,14 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
         CthulockError::new("Could not bind ext-session-lock-v1. Your compositor probably does not support this.")
     })?;
     let session_lock = session_lock_manager.lock(&qh, ());
-    let session_lock_surface = session_lock.get_lock_surface(&wl_surface, &output, &qh, ());
+    // set surface role as session lock surface
+    session_lock.get_lock_surface(&wl_surface, &output, &qh, ());
 
     let mut state = AppData::new(
         RegistryState::new(&globals),
         display,
         wl_surface,
         session_lock,
-        session_lock_surface,
         SeatState::new(&globals, &qh),
         sender
     );
@@ -64,14 +64,6 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
 
         while let Ok(message) = receiver.try_recv() {
             match message {
-                UiMessage::AckResize { serial } => {
-                    log::debug!("ack configure serial: {serial}");
-                    state.session_lock_surface.ack_configure(serial);
-                    state
-                        .render_thread_sender
-                        .send(WindowingMessage::SurfaceResizeAcked { serial })
-                        .unwrap();
-                }
                 UiMessage::UnlockWithPassword { password } => {
                     let mut context = Context::new(
                         "cthulock",
@@ -101,6 +93,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
     Ok(())
 }
 
+// TODO: Support multiple outputs
 // This struct represents the state of our app
 struct AppData {
     running: bool,
@@ -113,9 +106,7 @@ struct AppData {
     registry_state: RegistryState,
     wl_surface: wl_surface::WlSurface,
     wl_display: wl_display::WlDisplay,
-    // TODO: Support multiple outputs
     session_lock: ext_session_lock_v1::ExtSessionLockV1,
-    session_lock_surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1,
 
     seat_state: SeatState,
     keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -130,7 +121,6 @@ impl AppData {
         display: wl_display::WlDisplay,
         surface: wl_surface::WlSurface,
         session_lock: ext_session_lock_v1::ExtSessionLockV1,
-        session_lock_surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1,
         seat_state: SeatState,
         sender: Sender<WindowingMessage>,
     ) -> Self {
@@ -143,7 +133,6 @@ impl AppData {
             width: 0,
             height: 0,
             session_lock,
-            session_lock_surface,
             wl_display: display,
             seat_state,
             keyboard: None,
@@ -224,13 +213,6 @@ impl Dispatch<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ()> for AppD
                         .unwrap();
                     state.configured = true;
                     surface.ack_configure(serial);
-                } else {
-                    sender
-                        .send(WindowingMessage::SurfaceResize {
-                            size: (width, height),
-                            serial,
-                        })
-                        .unwrap()
                 }
             }
             _ => {}
