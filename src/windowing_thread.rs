@@ -30,7 +30,7 @@ use wayland_protocols::ext::session_lock::v1::client::{
 
 pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiMessage>) -> Result<()> {
     let conn = Connection::connect_to_env().map_err(|_| {
-        CthulockError::new("Failed to connect to wayland.")
+        CthulockError::Generic("Failed to connect to wayland.".to_owned())
     })?;
 
     let display = conn.display();
@@ -44,7 +44,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
     let wl_surface = compositor.create_surface(&qh, ());
     let output: wl_output::WlOutput = globals.bind(&qh, 1..=1, ()).unwrap();
     let session_lock_manager: ext_session_lock_manager_v1::ExtSessionLockManagerV1 = globals.bind(&qh, 1..=1, ()).map_err(|_| {
-        CthulockError::new("Could not bind ext-session-lock-v1. Your compositor probably does not support this.")
+        CthulockError::Generic("Could not bind ext-session-lock-v1. Your compositor probably does not support this.".to_owned())
     })?;
     let session_lock = session_lock_manager.lock(&qh, ());
     // set surface role as session lock surface
