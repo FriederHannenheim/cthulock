@@ -47,15 +47,15 @@ fn init_logger() {
 
 fn load_style() -> Result<ComponentDefinition> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("cthulock").map_err(|_| {
-       CthulockError::new("Failed to get XDG-Directories. This can only happen on Windows. Cthulock is not a Windows program.")
+       CthulockError::Generic("Failed to get XDG-Directories. This can only happen on Windows. Cthulock is not a Windows program.".to_owned())
     })?;
 
     let theme_path = xdg_dirs.find_config_file("style.slint").ok_or(
-        CthulockError::new("Could not find style.slint in config paths")
+        CthulockError::Generic("Could not find style.slint in config paths".to_owned())
     )?;
     
     let style = std::fs::read_to_string(theme_path).map_err(|e| {
-        CthulockError::new(&e.to_string())
+        CthulockError::Generic(e.to_string())
     })?;
 
 
@@ -67,6 +67,6 @@ fn load_style() -> Result<ComponentDefinition> {
     let definition = block_on(compiler.build_from_source(style.into(), Default::default()));
     slint_interpreter::print_diagnostics(&compiler.diagnostics());
     definition.ok_or(
-        CthulockError::new("Compiling the Slint code failed")
+        CthulockError::Generic("Compiling the Slint code failed".to_owned())
     )
 }

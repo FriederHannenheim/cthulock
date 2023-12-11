@@ -61,17 +61,18 @@ fn handle_messages(receiver: &Receiver<WindowingMessage>, slint_window: Rc<Minim
         match message {
             WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
             WindowingMessage::UnlockFailed =>  {
+                // TODO: Check if these are present before locking the screen
                 ui.set_property("checking_password", false.into()).map_err(|_| {
-                    CthulockError::property_fail("checking_password")
+                    CthulockError::PropertyFail("checking_password".into())
                 })?;
                 ui.set_property("password", SharedString::from("").into()).map_err(|_| {
-                    CthulockError::property_fail("password")
+                    CthulockError::PropertyFail("password".into())
                 })?;
             },
             WindowingMessage::Quit => {
                 // TODO: really quit
                 log::info!("quitting UI thread...");
-                return Ok(());
+                return Err(CthulockError::WindowingThreadQuit);
             },
             WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
         }
@@ -91,7 +92,7 @@ fn create_ui(sender: Sender<UiMessage>, style: ComponentDefinition) -> Result<Co
         };
 
         ui.set_property("checking_password", true.into()).map_err(|_| {
-            CthulockError::property_fail("checking_password")
+            CthulockError::PropertyFail("checking_password".to_owned())
         }).unwrap();
         sender_clone
             .send(UiMessage::UnlockWithPassword {
@@ -100,7 +101,7 @@ fn create_ui(sender: Sender<UiMessage>, style: ComponentDefinition) -> Result<Co
             .unwrap();
         Value::Void
     }).map_err(|_| {
-        CthulockError::callback_bind_fail("submit")
+        CthulockError::CallbackBindFail("submit".to_owned())
     })?;
 
     Ok(ui)

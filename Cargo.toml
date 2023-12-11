@@ -20,6 +20,7 @@ slint = { version = "1.3.2", default-features = false, features = ["renderer-fem
 slint-interpreter = { version = "1.3.2", features = ["display-diagnostics"]}
 smithay-client-toolkit = "0.18.0"
 tempfile = "3.8.1"
+thiserror = "1.0.50"
 wayland-client = "0.31.1"
 wayland-egl = "0.32.0"
 wayland-protocols = { version = "0.31.0", features = ["client", "staging"] }
