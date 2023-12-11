@@ -1,4 +1,3 @@
-use core::fmt;
 use thiserror::Error;
 
 // TODO: Proper Error handling everywhere
@@ -14,6 +13,10 @@ Consult the documentation for further information.")]
 The Cthulock Slint component needs to have a '{0}' property.\
 Consult the documentation for further information.")]
     PropertyFail(String),
+    #[error("The following Properties are missing:\n {0:?} \nCheck if they exist and have the correct type")]
+    MissingProperties(Vec<String>),
+    #[error("The following Callbacks are missing:\n {0:?}")]
+    MissingCallbacks(Vec<String>),
     #[error("")]
     WindowingThreadQuit,
 }

@@ -2,6 +2,7 @@ use std::{sync::mpsc, thread};
 
 use futures::executor::block_on;
 use slint_interpreter::{ComponentCompiler, ComponentDefinition};
+use ui::slint_types::{SlintProperty, check_propreties, check_callbacks};
 
 use crate::{
     message::{UiMessage, WindowingMessage},
@@ -66,7 +67,15 @@ fn load_style() -> Result<ComponentDefinition> {
 
     let definition = block_on(compiler.build_from_source(style.into(), Default::default()));
     slint_interpreter::print_diagnostics(&compiler.diagnostics());
-    definition.ok_or(
+    let definition = definition.ok_or(
         CthulockError::Generic("Compiling the Slint code failed".to_owned())
-    )
+    )?;
+
+    let slint_properties: Vec<_> = definition.properties().map(SlintProperty::from).collect();
+    check_propreties(ui::slint_types::get_required_properties().to_vec(), &slint_properties)?;
+
+    let slint_callbacks: Vec<_> = definition.callbacks().collect();
+    check_callbacks(&ui::slint_types::get_required_callbacks(), &slint_callbacks)?;
+
+    Ok(definition)
 }

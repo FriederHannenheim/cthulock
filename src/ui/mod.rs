@@ -21,9 +21,12 @@ use slint_interpreter::{
     ComponentHandle, ComponentInstance, ComponentDefinition
 };
 
+
 mod egl;
 mod platform;
 mod window_adapter;
+pub(crate) mod slint_types;
+
 
 pub fn ui_thread(style: ComponentDefinition, sender: Sender<UiMessage>, receiver: Receiver<WindowingMessage>) -> Result<()>{
     let slint_window = wait_for_configure_and_set_platform(&receiver)?;
