@@ -21,7 +21,7 @@ forward-focus: password;
 in property<string> clock_text;
 ```
 
-Testing your configuration in a nested wayland session is always encouraged. Cthulock will test if your slint code compiles before locking the screen but if you don't leave a way to unlock the screen you might get locked out of your PC until a reboot. 
+Before using a configuration to lock your screen you should test if it works in a nested Wayland session so that you don't get locked out of your PC. Cthulock will check if the configuration works and if all neccesary properties and callbacks exist before locking the screen but you can always do something like disabling the password input which will lock you out. That cannot be checked for.
 
 Testing is best done using labwc:
 ```

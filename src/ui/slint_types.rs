@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    ops::Deref,
+};
 
 use slint_interpreter::ValueType;
 
@@ -20,9 +23,9 @@ impl SlintProperty {
 }
 
 impl Display for SlintProperty {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Property '{}' of type '{:?}'", self.name, self.value_type)
-    }
+fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    writeln!(f, "Property '{}' of type '{:?}'", self.name, self.value_type)
+}
 }
 
 impl From<(&str, ValueType)> for SlintProperty {
@@ -43,38 +46,101 @@ impl From<(String, ValueType)> for SlintProperty {
     }
 }
 
-pub fn check_propreties(required_properties: Vec<SlintProperty>, existing_properties: &Vec<SlintProperty>) -> Result<()> {
-    let missing_properties: Vec<_> = required_properties
-                                        .iter()
-                                        .filter(|value| !existing_properties.contains(value))
-                                        .map(ToString::to_string)
-                                        .collect();
+
+macro_rules! properties_check {
+    (
+        $enum_name:ident,
+        $($enum_option:ident -> ($property_name:expr,$property_type:expr)),+
+    ) => {
+        pub(crate) enum $enum_name {
+            $(
+                $enum_option,
+            )+
+        }
+
+        impl $enum_name {
+            pub fn check_propreties(existing_properties: &Vec<SlintProperty>) -> Result<()> {
+                let property_options = vec![$(SlintProperty::new($property_name, $property_type),)+];
+                let missing_properties: Vec<_> = property_options
+                                                    .iter()
+                                                    .filter(|value| !existing_properties.contains(value))
+                                                    .map(ToString::to_string)
+                                                    .collect();
         
-    if missing_properties.is_empty() {
-        Ok(())
-    } else {
-        Err(CthulockError::MissingProperties(missing_properties))
-    }
+                if missing_properties.is_empty() {
+                    Ok(())
+                } else {
+                    Err(CthulockError::MissingProperties(missing_properties))
+                }
+            }
+
+        }
+
+        impl Deref for $enum_name {
+            type Target = str;
+
+            fn deref(&self) -> &str {
+                match self {
+                    $($enum_name::$enum_option => $property_name,)+
+                }
+            }
+        }
+    };
 }
 
-pub fn check_callbacks<T>(required_callbacks: &[T], existing_callbacks: &[T]) -> Result<()>
-where T: AsRef<str> + PartialEq + Display {
-    let missing_callbacks: Vec<_> = required_callbacks
-                                .iter()
-                                .filter(|value| !existing_callbacks.contains(value))
-                                .map(ToString::to_string)
-                                .collect();
-    if missing_callbacks.is_empty() {
-        Ok(())
-    } else {
-        Err(CthulockError::MissingCallbacks(missing_callbacks))
-    }
+properties_check!(
+    RequiredProperties,
+    Password -> ("password", ValueType::String)
+);
+
+properties_check!(
+    OptionalProperties,
+    ClockText -> ("clock_text", ValueType::String),
+    CheckingPassword -> ("checking_password", ValueType::Bool)
+);
+
+macro_rules! callbacks_check {
+    (
+        $enum_name:ident,
+        $($enum_option:ident -> $callback_name:expr),+
+    ) => {
+        pub(crate) enum $enum_name {
+            $(
+                $enum_option,
+            )+
+        }
+
+        impl $enum_name {
+            pub fn check_callbacks(existing_callbacks: &Vec<String>) -> Result<()> {
+                let callback_options = vec![$($callback_name.to_string(),)+];
+                let missing_callbacks: Vec<_> = callback_options
+                                                    .iter()
+                                                    .filter(|value| !existing_callbacks.contains(value))
+                                                    .map(ToString::to_string)
+                                                    .collect();
+        
+                if missing_callbacks.is_empty() {
+                    Ok(())
+                } else {
+                    Err(CthulockError::MissingCallbacks(missing_callbacks))
+                }
+            }
+
+        }
+
+        impl Deref for $enum_name {
+            type Target = str;
+
+            fn deref(&self) -> &str {
+                match self {
+                    $($enum_name::$enum_option => $callback_name,)+
+                }
+            }
+        }
+    };
 }
 
-pub fn get_required_callbacks() -> [std::string::String; 1] {
-    ["submit".to_owned()]
-}
-
-pub fn get_required_properties() -> [SlintProperty; 1] {
-    [SlintProperty::new("password", ValueType::String)]
-}
+callbacks_check!(
+    RequiredCallbacks,
+    Submit -> "submit"
+);
