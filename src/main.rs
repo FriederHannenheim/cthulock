@@ -2,7 +2,7 @@ use std::{sync::mpsc, thread};
 
 use futures::executor::block_on;
 use slint_interpreter::{ComponentCompiler, ComponentDefinition};
-use ui::slint_types::{SlintProperty, check_propreties, check_callbacks};
+use ui::slint_types::{SlintProperty, RequiredProperties, OptionalProperties, RequiredCallbacks};
 
 use crate::{
     message::{UiMessage, WindowingMessage},
@@ -18,6 +18,7 @@ mod message;
 mod ui;
 mod windowing_thread;
 
+// TODO: Better Error formatting
 fn main() -> Result<()> {
     init_logger();
 
@@ -72,10 +73,13 @@ fn load_style() -> Result<ComponentDefinition> {
     )?;
 
     let slint_properties: Vec<_> = definition.properties().map(SlintProperty::from).collect();
-    check_propreties(ui::slint_types::get_required_properties().to_vec(), &slint_properties)?;
+    RequiredProperties::check_propreties(&slint_properties)?;
+    if let Err(CthulockError::MissingProperties(properties)) = OptionalProperties::check_propreties(&slint_properties) {
+        log::info!("The following optional properties are not set: {properties:?}");
+    }
 
     let slint_callbacks: Vec<_> = definition.callbacks().collect();
-    check_callbacks(&ui::slint_types::get_required_callbacks(), &slint_callbacks)?;
+    RequiredCallbacks::check_callbacks(&slint_callbacks)?;
 
     Ok(definition)
 }
