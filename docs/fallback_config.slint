@@ -12,17 +12,18 @@ export component HelloWorld {
 
     Rectangle {
         background: black;
+        Text {
+            text: "Cthulock config loading failed.\n\n Welcome to the fallback config.\n\n Check the command output to see what went wrong";
+            color: white;
+            font-size: 19pt;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+        }
         VerticalLayout {
             alignment: end;
             spacing: 10px;
             padding: 40px;
             width: 350px;
-            Text {
-                text: "Cthulock config loading failed.\n\n Welcome to the fallback config.\n\n Check the command output to see what went wrong";
-                color: white;
-                wrap: word-wrap;
-                horizontal-alignment: center;
-            }
             password := LineEdit {
                 enabled: true;
                 horizontal-alignment: left;
