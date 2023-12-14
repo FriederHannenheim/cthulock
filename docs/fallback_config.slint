@@ -1,0 +1,34 @@
+import { LineEdit } from "std-widgets.slint";
+export component HelloWorld {
+    in property<bool> checking_password;
+    in-out property<string> password <=> password.text;
+    callback submit <=> password.accepted;
+    forward-focus: password;
+    states [
+        checking when checking-password : {
+            password.enabled: false;
+        }
+    ]
+
+    Rectangle {
+        background: black;
+        VerticalLayout {
+            alignment: end;
+            spacing: 10px;
+            padding: 40px;
+            width: 350px;
+            Text {
+                text: "Cthulock config loading failed.\n\n Welcome to the fallback config.\n\n Check the command output to see what went wrong";
+                color: white;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+            }
+            password := LineEdit {
+                enabled: true;
+                horizontal-alignment: left;
+                input-type: InputType.password;
+                placeholder-text: "password...";
+            }
+        }
+    }
+}

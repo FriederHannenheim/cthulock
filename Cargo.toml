@@ -1,6 +1,6 @@
 [package]
 name = "cthulock"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -13,6 +13,7 @@ futures = "0.3.29"
 glutin = "0.31.1"
 image = "0.24.7"
 khronos-egl = { version = "6.0.0", features = ["static"] }
+lexopt = "0.3.0"
 log = "0.4.20"
 pam-client = "0.5.0"
 raw-window-handle = "0.5"

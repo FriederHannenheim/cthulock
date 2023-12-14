@@ -21,9 +21,11 @@ forward-focus: password;
 in property<string> clock_text;
 ```
 
+When testing your configuration run cthulock with `--no-fallback`, otherwhise a fallback lockscreen is shown to ensure your screen is locked even if the configuration is invalid.
+
 Before using a configuration to lock your screen you should test if it works in a nested Wayland session so that you don't get locked out of your PC. Cthulock will check if the configuration works and if all neccesary properties and callbacks exist before locking the screen but you can always do something like disabling the password input which will lock you out. That cannot be checked for.
 
 Testing is best done using labwc:
 ```
-$ labwc -s cthulock
+$ labwc -s "cthulock --no-fallback"
 ```
