@@ -1,44 +1,43 @@
-use chrono::Local;
-use std::{
-    sync::mpsc::{Receiver, Sender},
-    time::Duration, rc::Rc,
-};
 use crate::{
+    common::CthulockError,
     message::{UiMessage, WindowingMessage},
-    ui:: {
+    ui::{
         egl::OpenGLContext,
         platform::CthulockSlintPlatform,
+        slint_types::{OptionalProperties, RequiredProperties},
         window_adapter::MinimalFemtoVGWindow,
-        slint_types::{RequiredProperties, OptionalProperties},
-    }, Result, common::CthulockError,
+    },
+    Result,
 };
-use slint::{
-    platform::femtovg_renderer::FemtoVGRenderer,
-    PhysicalSize,
-};
+use chrono::Local;
+use slint::{platform::femtovg_renderer::FemtoVGRenderer, PhysicalSize};
 use slint_interpreter::{
-    Value,
-    SharedString,
-    ComponentHandle, ComponentInstance, ComponentDefinition
+    ComponentDefinition, ComponentHandle, ComponentInstance, SharedString, Value,
+};
+use std::{
+    rc::Rc,
+    sync::mpsc::{Receiver, Sender},
+    time::Duration,
 };
 
 use self::slint_types::RequiredCallbacks;
 
-
 mod egl;
 mod platform;
-mod window_adapter;
 pub(crate) mod slint_types;
+mod window_adapter;
 
-
-pub fn ui_thread(style: ComponentDefinition, sender: Sender<UiMessage>, receiver: Receiver<WindowingMessage>) -> Result<()>{
+pub fn ui_thread(
+    style: ComponentDefinition,
+    sender: Sender<UiMessage>,
+    receiver: Receiver<WindowingMessage>,
+) -> Result<()> {
     let slint_window = wait_for_configure_and_set_platform(&receiver)?;
-    
+
     let ui = create_ui(sender.clone(), style)?;
     ui.show().unwrap();
 
-    let running = true;
-    while running {
+    loop {
         slint::platform::update_timers_and_animations();
 
         if handle_messages(&receiver, Rc::clone(&slint_window), &ui).is_err() {
@@ -46,7 +45,10 @@ pub fn ui_thread(style: ComponentDefinition, sender: Sender<UiMessage>, receiver
         }
 
         let time = Local::now();
-        let _ = ui.set_property(&OptionalProperties::ClockText, SharedString::from(time.format("%H:%M").to_string()).into());
+        let _ = ui.set_property(
+            &OptionalProperties::ClockText,
+            SharedString::from(time.format("%H:%M").to_string()).into(),
+        );
 
         slint_window.draw_if_needed();
 
@@ -58,22 +60,25 @@ pub fn ui_thread(style: ComponentDefinition, sender: Sender<UiMessage>, receiver
             std::thread::sleep(duration);
         }
     }
-
-    Ok(())
 }
 
-fn handle_messages(receiver: &Receiver<WindowingMessage>, slint_window: Rc<MinimalFemtoVGWindow>, ui: &ComponentInstance) -> Result<()> {
+fn handle_messages(
+    receiver: &Receiver<WindowingMessage>,
+    slint_window: Rc<MinimalFemtoVGWindow>,
+    ui: &ComponentInstance,
+) -> Result<()> {
     while let Ok(message) = receiver.try_recv() {
         match message {
             WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
-            WindowingMessage::UnlockFailed =>  {
+            WindowingMessage::UnlockFailed => {
                 let _ = ui.set_property(&OptionalProperties::CheckingPassword, false.into());
-                let _ = ui.set_property(&RequiredProperties::Password,SharedString::from("").into());
-            },
+                let _ =
+                    ui.set_property(&RequiredProperties::Password, SharedString::from("").into());
+            }
             WindowingMessage::Quit => {
                 log::info!("quitting UI thread...");
                 return Err(CthulockError::WindowingThreadQuit);
-            },
+            }
             WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
         }
     }
@@ -98,12 +103,15 @@ fn create_ui(sender: Sender<UiMessage>, style: ComponentDefinition) -> Result<Co
             })
             .unwrap();
         Value::Void
-    }).unwrap();
+    })
+    .unwrap();
 
     Ok(ui)
 }
 
-fn wait_for_configure_and_set_platform(receiver: &Receiver<WindowingMessage>) -> Result<Rc<MinimalFemtoVGWindow>> {
+fn wait_for_configure_and_set_platform(
+    receiver: &Receiver<WindowingMessage>,
+) -> Result<Rc<MinimalFemtoVGWindow>> {
     let (display_id, surface_id, size) = match receiver.recv().unwrap() {
         WindowingMessage::SurfaceReady {
             display_id,
@@ -128,3 +136,4 @@ fn wait_for_configure_and_set_platform(receiver: &Receiver<WindowingMessage>) ->
 
     Ok(slint_window)
 }
+

@@ -1,30 +1,27 @@
 use std::{sync::mpsc, thread};
 
 use crate::{
+    common::CthulockError,
     message::{UiMessage, WindowingMessage},
+    style::load_style_or_fallback,
     ui::ui_thread,
     windowing_thread::windowing_thread,
-    common::CthulockError,
-    style::load_style_or_fallback
 };
 
 type Result<T> = std::result::Result<T, CthulockError>;
 
+mod args;
 mod common;
 mod message;
+mod style;
 mod ui;
 mod windowing_thread;
-mod args;
-mod style;
-
 
 // TODO: Better Error formatting
 fn main() -> Result<()> {
     init_logger();
 
-    let args = args::parse_args().map_err(|e|
-        CthulockError::ArgParseFail(e)
-    )?;
+    let args = args::parse_args().map_err(CthulockError::ArgParseFail)?;
 
     let style = load_style_or_fallback(&args)?;
 
@@ -36,12 +33,11 @@ fn main() -> Result<()> {
             sender_to_render.send(WindowingMessage::Quit).unwrap();
         }
     });
-    
+
     ui_thread(style, sender_to_windowing, receiver_from_windowing)?;
 
     Ok(())
 }
-
 
 fn init_logger() {
     #[cfg(debug_assertions)]

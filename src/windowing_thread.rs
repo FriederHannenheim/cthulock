@@ -1,4 +1,8 @@
-use crate::{message::{UiMessage, WindowingMessage}, Result, common::CthulockError};
+use crate::{
+    common::CthulockError,
+    message::{UiMessage, WindowingMessage},
+    Result,
+};
 use pam_client::{conv_mock::Conversation, Context, Flag};
 use slint::{
     platform::{Key, PointerEventButton, WindowEvent},
@@ -28,10 +32,12 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_manager_v1, ext_session_lock_surface_v1, ext_session_lock_v1,
 };
 
-pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiMessage>) -> Result<()> {
-    let conn = Connection::connect_to_env().map_err(|_| {
-        CthulockError::Generic("Failed to connect to wayland.".to_owned())
-    })?;
+pub fn windowing_thread(
+    sender: Sender<WindowingMessage>,
+    receiver: Receiver<UiMessage>,
+) -> Result<()> {
+    let conn = Connection::connect_to_env()
+        .map_err(|_| CthulockError::Generic("Failed to connect to wayland.".to_owned()))?;
 
     let display = conn.display();
 
@@ -56,7 +62,7 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
         wl_surface,
         session_lock,
         SeatState::new(&globals, &qh),
-        sender
+        sender,
     );
 
     while state.running {
@@ -76,7 +82,10 @@ pub fn windowing_thread(sender: Sender<WindowingMessage>, receiver: Receiver<UiM
                         && context.acct_mgmt(Flag::NONE).is_ok()
                     {
                         log::info!("authentication successfull, quitting...");
-                        state.render_thread_sender.send(WindowingMessage::Quit).unwrap();
+                        state
+                            .render_thread_sender
+                            .send(WindowingMessage::Quit)
+                            .unwrap();
                         state.session_lock.unlock_and_destroy();
                         event_queue.roundtrip(&mut state).unwrap();
                         state.running = false;
@@ -191,31 +200,29 @@ impl Dispatch<ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ()> for AppD
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        match event {
-            ext_session_lock_surface_v1::Event::Configure {
-                serial,
-                width,
-                height,
-            } => {
-                log::debug!("surface reconfigure serial: {serial}");
+        if let ext_session_lock_surface_v1::Event::Configure {
+            serial,
+            width,
+            height,
+        } = event
+        {
+            log::debug!("surface reconfigure serial: {serial}");
 
-                state.width = width;
-                state.height = height;
+            state.width = width;
+            state.height = height;
 
-                let sender = &state.render_thread_sender;
-                if !state.configured {
-                    sender
-                        .send(WindowingMessage::SurfaceReady {
-                            display_id: state.wl_display.id(),
-                            surface_id: state.wl_surface.id(),
-                            size: (width, height),
-                        })
-                        .unwrap();
-                    state.configured = true;
-                    surface.ack_configure(serial);
-                }
+            let sender = &state.render_thread_sender;
+            if !state.configured {
+                sender
+                    .send(WindowingMessage::SurfaceReady {
+                        display_id: state.wl_display.id(),
+                        surface_id: state.wl_surface.id(),
+                        size: (width, height),
+                    })
+                    .unwrap();
+                state.configured = true;
+                surface.ack_configure(serial);
             }
-            _ => {}
         }
     }
 }

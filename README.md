@@ -7,8 +7,11 @@ Cthulock is still in development, if you have any suggestions for features pleas
 ![Example Screenshot](./docs/example_config_screenshot.png)
 ## Installation
 #### Compile dependencies
-- Rust
-- wayland_client
+- rust
+- clang
+- xkbcommon
+- egl
+- pam
 
 If you have the repo cloned you can just do
 ```
