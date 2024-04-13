@@ -16,7 +16,7 @@ use slint_interpreter::{
 };
 use std::{
     rc::Rc,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{Receiver, Sender, TryRecvError},
     time::Duration,
 };
 
@@ -40,7 +40,7 @@ pub fn ui_thread(
     loop {
         slint::platform::update_timers_and_animations();
 
-        if handle_messages(&receiver, Rc::clone(&slint_window), &ui).is_err() {
+        if receive_messages(&receiver, Rc::clone(&slint_window), &ui).is_err() {
             return Ok(());
         }
 
@@ -62,27 +62,46 @@ pub fn ui_thread(
     }
 }
 
-fn handle_messages(
+fn handle_message(
+    message: WindowingMessage,
+    slint_window: Rc<MinimalFemtoVGWindow>,
+    ui: &ComponentInstance
+) -> Result<()> {
+    match message {
+        WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
+        WindowingMessage::UnlockFailed => {
+            let _ = ui.set_property(&OptionalProperties::CheckingPassword, false.into());
+            let _ =
+                ui.set_property(&RequiredProperties::Password, SharedString::from("").into());
+        }
+        WindowingMessage::Quit => {
+            log::info!("quitting UI thread...");
+            return Err(CthulockError::WindowingThreadQuit);
+        }
+        WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
+    }
+    Ok(())
+}
+
+fn receive_messages(
     receiver: &Receiver<WindowingMessage>,
     slint_window: Rc<MinimalFemtoVGWindow>,
     ui: &ComponentInstance,
 ) -> Result<()> {
-    while let Ok(message) = receiver.try_recv() {
+    loop {
+        let message = receiver.try_recv();
         match message {
-            WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
-            WindowingMessage::UnlockFailed => {
-                let _ = ui.set_property(&OptionalProperties::CheckingPassword, false.into());
-                let _ =
-                    ui.set_property(&RequiredProperties::Password, SharedString::from("").into());
+            Ok(message) => {
+                handle_message(message, slint_window.clone(), ui)?;
+            },
+            Err(TryRecvError::Empty) => {
+                return Ok(())
             }
-            WindowingMessage::Quit => {
-                log::info!("quitting UI thread...");
+            Err(TryRecvError::Disconnected) => {
                 return Err(CthulockError::WindowingThreadQuit);
             }
-            WindowingMessage::SurfaceReady { .. } => panic!("surface already configured"),
         }
     }
-    Ok(())
 }
 
 fn create_ui(sender: Sender<UiMessage>, style: ComponentDefinition) -> Result<ComponentInstance> {
