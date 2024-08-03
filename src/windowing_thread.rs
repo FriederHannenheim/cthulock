@@ -348,6 +348,7 @@ impl KeyboardHandler for AppData {
         _: &wl_keyboard::WlKeyboard,
         _serial: u32,
         _: Modifiers,
+        _layout: u32,
     ) {
     }
 }

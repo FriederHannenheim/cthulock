@@ -1,5 +1,5 @@
 use futures::executor::block_on;
-use slint_interpreter::{ComponentCompiler, ComponentDefinition};
+use slint_interpreter::{Compiler, ComponentDefinition, Diagnostic};
 use std::path::PathBuf;
 
 use crate::{
@@ -51,11 +51,12 @@ fn load_style(
     include_paths: Vec<PathBuf>,
     supress_warnings: bool,
 ) -> Result<ComponentDefinition> {
-    let mut compiler = ComponentCompiler::default();
+    let mut compiler = Compiler::default();
     compiler.set_include_paths(include_paths);
 
-    let definition = block_on(compiler.build_from_source(style, Default::default()));
-    slint_interpreter::print_diagnostics(compiler.diagnostics());
+    let result = block_on(compiler.build_from_source(style, Default::default()));
+    result.print_diagnostics();
+    let definition = result.component(result.component_names().next().unwrap_or_default());
     let definition = definition.ok_or(CthulockError::Generic(
         "Compiling the Slint code failed".to_owned(),
     ))?;
@@ -88,4 +89,3 @@ mod tests {
         Ok(())
     }
 }
-
