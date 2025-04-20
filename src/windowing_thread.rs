@@ -9,22 +9,26 @@ use slint::{
     LogicalPosition, SharedString,
 };
 use smithay_client_toolkit::{
-    delegate_keyboard, delegate_pointer, delegate_registry, delegate_seat,
+    delegate_keyboard, delegate_pointer, delegate_registry, delegate_seat, delegate_touch,
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers},
         pointer::{PointerEvent, PointerEventKind, PointerHandler},
+        touch::TouchHandler,
         Capability, SeatHandler, SeatState,
     },
 };
-use std::sync::mpsc::{Receiver, Sender};
+use std::{
+    collections::HashMap,
+    sync::mpsc::{Receiver, Sender},
+};
 use wayland_client::{
     delegate_noop,
     globals::registry_queue_init,
     protocol::{
         wl_buffer, wl_compositor, wl_display, wl_keyboard, wl_output, wl_pointer, wl_seat,
-        wl_surface,
+        wl_surface, wl_touch,
     },
     Connection, Dispatch, Proxy, QueueHandle,
 };
@@ -108,6 +112,8 @@ struct AppData {
     running: bool,
     locked: bool,
     configured: bool,
+    touches: HashMap<i32, LogicalPosition>,
+    active_touch: Option<i32>,
 
     width: u32,
     height: u32,
@@ -120,6 +126,7 @@ struct AppData {
     seat_state: SeatState,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
+    touch: Option<wl_touch::WlTouch>,
 
     render_thread_sender: Sender<WindowingMessage>,
 }
@@ -146,7 +153,10 @@ impl AppData {
             seat_state,
             keyboard: None,
             pointer: None,
+            touch: None,
             render_thread_sender: sender,
+            touches: HashMap::new(),
+            active_touch: None,
         }
     }
 }
@@ -161,6 +171,7 @@ delegate_noop!(AppData: ignore ext_session_lock_manager_v1::ExtSessionLockManage
 delegate_seat!(AppData);
 delegate_keyboard!(AppData);
 delegate_pointer!(AppData);
+delegate_touch!(AppData);
 delegate_registry!(AppData);
 
 impl ProvidesRegistryState for AppData {
@@ -261,6 +272,16 @@ impl SeatHandler for AppData {
                 .expect("Failed to create pointer");
             self.pointer = Some(pointer);
         }
+
+        if capability == Capability::Touch && self.touch.is_none() {
+            log::debug!("got touch capability");
+
+            let touch = self
+                .seat_state
+                .get_touch(qh, &seat)
+                .expect("Failed to create touch");
+            self.touch = Some(touch);
+        }
     }
 
     fn remove_capability(
@@ -278,6 +299,11 @@ impl SeatHandler for AppData {
         if capability == Capability::Pointer && self.pointer.is_some() {
             log::debug!("unset pointer capability");
             self.pointer.take().unwrap().release();
+        }
+
+        if capability == Capability::Touch && self.touch.is_some() {
+            log::debug!("unset touch capability");
+            self.touch.take().unwrap().release();
         }
     }
 
@@ -448,5 +474,108 @@ fn wl_pointer_button_to_slint(button: u32) -> PointerEventButton {
         273 => PointerEventButton::Right,
         274 => PointerEventButton::Middle,
         _ => PointerEventButton::Other,
+    }
+}
+
+impl TouchHandler for AppData {
+    fn up(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _touch: &wl_touch::WlTouch,
+        _serial: u32,
+        _time: u32,
+        id: i32,
+    ) {
+        if let Some(position) = self.touches.remove(&id) {
+            if self.active_touch == Some(id) {
+                self.render_thread_sender
+                    .send(WindowingMessage::SlintWindowEvent(
+                        WindowEvent::PointerReleased {
+                            position,
+                            button: PointerEventButton::Left,
+                        },
+                    ))
+                    .unwrap();
+                self.active_touch = None;
+            }
+        }
+    }
+    fn down(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _touch: &wl_touch::WlTouch,
+        _serial: u32,
+        _time: u32,
+        _surface: wl_surface::WlSurface,
+        id: i32,
+        position: (f64, f64),
+    ) {
+        let position = LogicalPosition::new(position.0 as f32, position.1 as f32);
+        self.touches.insert(id, position);
+        if self.active_touch.is_none() {
+            self.active_touch = Some(id);
+            self.render_thread_sender
+                .send(WindowingMessage::SlintWindowEvent(
+                    WindowEvent::PointerPressed {
+                        position,
+                        button: PointerEventButton::Left,
+                    },
+                ))
+                .unwrap();
+        }
+    }
+    fn motion(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _touch: &wl_touch::WlTouch,
+        _time: u32,
+        id: i32,
+        position: (f64, f64),
+    ) {
+        let position = LogicalPosition::new(position.0 as f32, position.1 as f32);
+        self.touches.insert(id, position);
+        if self.active_touch == Some(id) {
+            self.render_thread_sender
+                .send(WindowingMessage::SlintWindowEvent(
+                    WindowEvent::PointerMoved { position },
+                ))
+                .unwrap();
+        }
+    }
+    fn shape(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _touch: &wl_touch::WlTouch,
+        _id: i32,
+        _major: f64,
+        _minor: f64,
+    ) {
+    }
+    fn cancel(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _touch: &wl_touch::WlTouch) {
+        for (id, position) in self.touches.drain() {
+            if self.active_touch == Some(id) {
+                self.render_thread_sender
+                    .send(WindowingMessage::SlintWindowEvent(
+                        WindowEvent::PointerReleased {
+                            position,
+                            button: PointerEventButton::Left,
+                        },
+                    ))
+                    .unwrap();
+            }
+        }
+    }
+    fn orientation(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _touch: &wl_touch::WlTouch,
+        _id: i32,
+        _orientation: f64,
+    ) {
     }
 }
