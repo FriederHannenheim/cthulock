@@ -38,12 +38,19 @@
               libxkbcommon
               pam
               libGL
+              wayland
+              makeWrapper
             ];
             LD_LIBRARY_PATH = "${pkgs.libGL}/lib";
             cargoBuildType = "debug";
             cargoCheckType = "debug";
 
             dontStrip = true;
+
+            postInstall = ''
+              wrapProgram $out/bin/cthulock \
+                --prefix LD_LIBRARY_PATH : "${pkgs.wayland}/lib"
+            '';
           };
         }
       );
@@ -54,6 +61,7 @@
             packages = with pkgs; [
               pkg-config
               libxkbcommon
+              wayland
 
               cargo
               rustc
