@@ -36,10 +36,11 @@
             ];
             buildInputs = with pkgs; [
               libxkbcommon
-              pam
+              linux-pam
               libGL
               wayland
               makeWrapper
+              fontconfig
             ];
             LD_LIBRARY_PATH = "${pkgs.libGL}/lib";
             cargoBuildType = "debug";
@@ -49,7 +50,9 @@
 
             postInstall = ''
               wrapProgram $out/bin/cthulock \
-                --prefix LD_LIBRARY_PATH : "${pkgs.wayland}/lib"
+                --prefix LD_LIBRARY_PATH : "${pkgs.wayland}/lib" \
+                --prefix LD_LIBRARY_PATH : "${pkgs.libGL}/lib" \
+                --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [ pkgs.fontconfig ]}"
             '';
           };
         }
