@@ -1,5 +1,5 @@
 import { LineEdit } from "std-widgets.slint";
-export component HelloWorld {
+export component HelloWorld inherits Window {
     in property<string> clock_text;
     in property<bool> checking_password;
     in-out property<string> password <=> password.text;
