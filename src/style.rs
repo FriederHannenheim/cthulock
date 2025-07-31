@@ -27,9 +27,7 @@ pub fn load_style_or_fallback(args: &Args) -> Result<ComponentDefinition> {
 }
 
 fn get_style_and_include_paths() -> Result<(String, Vec<PathBuf>)> {
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("cthulock").map_err(|_| {
-       CthulockError::Generic("Failed to get XDG-Directories. This can only happen on Windows. Cthulock is not a Windows program.".to_owned())
-    })?;
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("cthulock");
 
     let theme_path = xdg_dirs
         .find_config_file("style.slint")
@@ -41,7 +39,9 @@ fn get_style_and_include_paths() -> Result<(String, Vec<PathBuf>)> {
         std::fs::read_to_string(theme_path).map_err(|e| CthulockError::Generic(e.to_string()))?;
 
     let mut config_dirs = xdg_dirs.get_config_dirs();
-    config_dirs.push(xdg_dirs.get_config_home());
+    config_dirs.push(xdg_dirs.get_config_home().ok_or(CthulockError::Generic(
+        "Failed to get XDG-Directories. This can only happen on Windows. Cthulock is not a Windows program.".to_owned(),
+    ))?);
     Ok((style, config_dirs))
 }
 
