@@ -34,7 +34,7 @@
           makeWrapper
           fontconfig
         ];
-      in
+      in rec
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "cthulock";
@@ -72,6 +72,22 @@
             labwc
           ];
           LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
+        };
+        nixosModules.default = {
+          config,
+          pkgs,
+          lib,
+          ...
+        }:
+        let
+          cfg = config.programs.cthulock;
+        in
+        {
+          options.programs.cthulock.enable = lib.mkEnableOption "Installs Cthulock and creates a pam service for it";
+          config = lib.mkIf cfg.enable {
+            environment.systemPackages = [ packages.default ];
+            security.pam.services."cthulock" = {};
+          };
         };
       }
     );

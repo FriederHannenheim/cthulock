@@ -6,6 +6,17 @@ Cthulock is still in development, if you have any suggestions for features pleas
 ## Example Screenshot
 ![Example Screenshot](./docs/example_config_screenshot.png)
 ## Installation
+
+### NixOS
+Add the cthulock flake to your flake inputs like this:
+```nix
+inputs.cthulock.url = "github:FriederHannenheim/cthulock";
+```
+Then add the cthulock module to your system and set
+```nix
+programs.cthulock.enable = true;  
+```
+
 #### Compile dependencies
 - rust
 - clang
