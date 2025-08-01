@@ -7,24 +7,32 @@ license = "GPL-3.0-or-later"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.41"
+chrono = { version = "0.4.41", default-features = false, features = ["clock"] }
 env_logger = "0.11.8"
-futures = "0.3.31"
-glutin = "0.32.3"
-image = "0.25.6"
-khronos-egl = { version = "6.0.0", features = ["static"] }
+futures-lite = { version = "2.6.0", default-features = false }
 lexopt = "0.3.1"
 log = "0.4.27"
 pam-client = "0.5.0"
 raw-window-handle = "0.6.2"
-slint = { version = "1.12.1", default-features = false, features = ["renderer-femtovg", "std", "compat-1-2", "renderer-software"] }
 slint-interpreter = { version = "1.12.1", features = ["display-diagnostics"]}
-smithay-client-toolkit = "0.19.2"
-tempfile = "3.20.0"
 thiserror = "2.0.12"
 wayland-client = "0.31.11"
 wayland-egl = "0.32.8"
 wayland-protocols = { version = "0.32.9", features = ["client", "staging"] }
-whoami = "1.6.0"
+whoami = { version = "1.6.0", default-features = false }
 xdg = "3.0.0"
 
+[dependencies.slint]
+version = "1.12.1"
+default-features = false
+features = ["renderer-femtovg", "std", "compat-1-2", "renderer-software"]
+
+[dependencies.smithay-client-toolkit]
+version = "0.19.2"
+default-features = false
+features = ["xkbcommon"]
+
+[dependencies.glutin]
+version = "0.32.3"
+default-features = false
+features = ["wayland"]

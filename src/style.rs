@@ -1,5 +1,5 @@
-use futures::executor::block_on;
-use slint_interpreter::{Compiler, ComponentDefinition, Diagnostic};
+use futures_lite::future::block_on;
+use slint_interpreter::{Compiler, ComponentDefinition};
 use std::path::PathBuf;
 
 use crate::{
