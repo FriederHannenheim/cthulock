@@ -12,11 +12,11 @@ use crate::{
 pub(crate) const FALLBACK_STYLE: &str = include_str!("../docs/fallback_config.slint");
 
 pub fn load_style_or_fallback(args: &Args) -> Result<ComponentDefinition> {
-    let (style_string, config_dirs) = get_style_and_include_paths()?;
-    let style = load_style(style_string, config_dirs, false);
+    let style = get_style_and_include_paths()
+        .and_then(|(style_string, config_dirs)| load_style(style_string, config_dirs, false));
     if let Err(e) = style {
         if args.fallback_config {
-            log::error!("Loading cthulock config failed. Loading fallback config. Errors {e}");
+            log::error!("Loading cthulock config failed. Loading fallback config. Errors: \n{e}");
             load_style(FALLBACK_STYLE.to_owned(), vec![], true)
         } else {
             Err(e)
