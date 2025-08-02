@@ -7,16 +7,7 @@ Cthulock is still in development, if you have any suggestions for features pleas
 ![Example Screenshot](./docs/example_config_screenshot.png)
 ## Installation
 
-### NixOS
-Add the cthulock flake to your flake inputs like this:
-```nix
-inputs.cthulock.url = "github:FriederHannenheim/cthulock";
-```
-Then add the cthulock module to your system and set
-```nix
-programs.cthulock.enable = true;  
-```
-
+### Compiling
 #### Compile dependencies
 - rust
 - clang
@@ -32,6 +23,22 @@ $ cargo install --path .
 Alternatively you can install from git like this
 ```
 $ cargo install --git https://github.com/FriederHannenheim/cthulock.git
+```
+
+**IMPORTANT: Cthulock needs either /etc/pam.d/cthulock or /etc/pam.conf to exist in order to unlock.
+If neither exist, symlink /etc/pam.d/cthulock to /etc/pam.d/login like this:**
+```bash
+sudo ln -s /etc/pam.d/login /etc/pam.d/cthulock
+```
+
+### NixOS
+Add the cthulock flake to your flake inputs like this:
+```nix
+inputs.cthulock.url = "github:FriederHannenheim/cthulock";
+```
+Then add the cthulock module to your system and set
+```nix
+programs.cthulock.enable = true;  
 ```
 
 ## Running
