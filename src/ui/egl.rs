@@ -13,7 +13,8 @@ use slint::platform::femtovg_renderer::OpenGLInterface;
 use std::{
     error::Error,
     ffi::{c_void, CStr},
-    num::NonZeroU32, ptr::NonNull,
+    num::NonZeroU32,
+    ptr::NonNull,
 };
 use wayland_client::backend::ObjectId;
 
@@ -24,7 +25,10 @@ pub struct OpenGLContext {
 
 impl OpenGLContext {
     pub fn new(display_id: ObjectId, surface_id: ObjectId, size: (u32, u32)) -> Self {
-        let handle = WaylandDisplayHandle::new(NonNull::<c_void>::new(display_id.as_ptr() as *mut _).expect("error converting to cvoid"));
+        let handle = WaylandDisplayHandle::new(
+            NonNull::<c_void>::new(display_id.as_ptr() as *mut _)
+                .expect("error converting to cvoid"),
+        );
         let display_handle = RawDisplayHandle::Wayland(handle);
 
         let config_template = ConfigTemplateBuilder::new().with_alpha_size(8).build();
@@ -51,7 +55,10 @@ impl OpenGLContext {
                 .expect("Failed to create OpenGL context")
         };
 
-        let handle = WaylandWindowHandle::new(NonNull::<c_void>::new(surface_id.as_ptr() as *mut _).expect("error converting to cvoid"));
+        let handle = WaylandWindowHandle::new(
+            NonNull::<c_void>::new(surface_id.as_ptr() as *mut _)
+                .expect("error converting to cvoid"),
+        );
         let surface_handle = RawWindowHandle::Wayland(handle);
 
         let (width, height) = size;

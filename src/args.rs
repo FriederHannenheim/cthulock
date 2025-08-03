@@ -16,14 +16,16 @@ pub fn parse_args() -> std::result::Result<Args, lexopt::Error> {
                 fallback_config = false;
             }
             Short('h') | Long("help") => {
-                println!("Usage: cthulock [OPTIONS]
+                println!(
+                    "Usage: cthulock [OPTIONS]
 
 Options:
 --fallback              show a fallback lockscreen if loading your component fails (default)
---no-fallback           don't show a fallback, use only in testing");
+--no-fallback           don't show a fallback, use only in testing"
+                );
                 std::process::exit(0);
             }
-            _ => return Err(arg.unexpected())
+            _ => return Err(arg.unexpected()),
         }
     }
 

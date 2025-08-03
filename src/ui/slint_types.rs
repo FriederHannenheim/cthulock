@@ -144,4 +144,3 @@ callbacks_check!(
     RequiredCallbacks,
     Submit -> "submit"
 );
-

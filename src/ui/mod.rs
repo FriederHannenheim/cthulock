@@ -65,14 +65,13 @@ pub fn ui_thread(
 fn handle_message(
     message: WindowingMessage,
     slint_window: Rc<MinimalFemtoVGWindow>,
-    ui: &ComponentInstance
+    ui: &ComponentInstance,
 ) -> Result<()> {
     match message {
         WindowingMessage::SlintWindowEvent(event) => slint_window.dispatch_event(event),
         WindowingMessage::UnlockFailed => {
             let _ = ui.set_property(&OptionalProperties::CheckingPassword, false.into());
-            let _ =
-                ui.set_property(&RequiredProperties::Password, SharedString::from("").into());
+            let _ = ui.set_property(&RequiredProperties::Password, SharedString::from("").into());
         }
         WindowingMessage::Quit => {
             log::info!("quitting UI thread...");
@@ -93,10 +92,8 @@ fn receive_messages(
         match message {
             Ok(message) => {
                 handle_message(message, slint_window.clone(), ui)?;
-            },
-            Err(TryRecvError::Empty) => {
-                return Ok(())
             }
+            Err(TryRecvError::Empty) => return Ok(()),
             Err(TryRecvError::Disconnected) => {
                 return Err(CthulockError::WindowingThreadQuit);
             }
@@ -155,4 +152,3 @@ fn wait_for_configure_and_set_platform(
 
     Ok(slint_window)
 }
-
