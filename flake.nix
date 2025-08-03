@@ -65,6 +65,7 @@
         devShells.default = pkgs.mkShell {
           inherit buildInputs nativeBuildInputs;
           packages = with pkgs; [
+            clippy
             cargo
             rustc
             rust-analyzer
