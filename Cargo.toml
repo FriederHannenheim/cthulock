@@ -9,12 +9,11 @@ license = "GPL-3.0-or-later"
 [dependencies]
 chrono = { version = "0.4.41", default-features = false, features = ["clock"] }
 env_logger = "0.11.8"
-futures-lite = { version = "2.6.0", default-features = false }
+futures-lite = { version = "2.6.0", default-features = false, features = ["std"] }
 lexopt = "0.3.1"
 log = "0.4.27"
 pam-client = "0.5.0"
 raw-window-handle = "0.6.2"
-slint-interpreter = { version = "1.12.1", features = ["display-diagnostics"]}
 thiserror = "2.0.12"
 wayland-client = "0.31.11"
 wayland-egl = "0.32.8"
@@ -22,10 +21,26 @@ wayland-protocols = { version = "0.32.9", features = ["client", "staging"] }
 whoami = { version = "1.6.0", default-features = false }
 xdg = "3.0.0"
 
+[dependencies.slint-interpreter]
+version = "1.12.1"
+default-features = false
+features = [
+  "display-diagnostics",
+  "renderer-femtovg",
+  "std",
+  "compat-1-2",
+  "renderer-software"
+]
+
 [dependencies.slint]
 version = "1.12.1"
 default-features = false
-features = ["renderer-femtovg", "std", "compat-1-2", "renderer-software"]
+features = [
+  "renderer-femtovg",
+  "std",
+  "compat-1-2",
+  "renderer-software"
+]
 
 [dependencies.smithay-client-toolkit]
 version = "0.19.2"
