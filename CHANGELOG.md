@@ -1,3 +1,5 @@
+# 0.1.2
+- Fix dependency declaration with which unneeded crates where being built
 
 # 0.1.1
 - Validate all required properties and callbacks are in the Slint component before locking the screen
